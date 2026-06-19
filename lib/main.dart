@@ -152,19 +152,55 @@ class _GamePageState extends State<GamePage> {
             colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
           ),
         ),
-        child: GameWidget(
-          game: _game,
-          overlayBuilderMap: {
-            'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
-            'gameOver': (ctx, g) =>
-                GameOverOverlay(game: g as KnifeThrowerGame),
-            'countdown': (ctx, g) =>
-                CountdownOverlay(game: g as KnifeThrowerGame),
-          },
+        child: Stack(
+              fit: StackFit.expand,
+              children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(painter: _NoiseOverlayPainter()),
+              ),
+            ),
+            GameWidget(
+              game: _game,
+              overlayBuilderMap: {
+                'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
+                'gameOver': (ctx, g) =>
+                    GameOverOverlay(game: g as KnifeThrowerGame),
+                'countdown': (ctx, g) =>
+                    CountdownOverlay(game: g as KnifeThrowerGame),
+              },
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+//  NOISE OVERLAY FOR GRADIENT BANDING
+// ─────────────────────────────────────────────
+class _NoiseOverlayPainter extends CustomPainter {
+  final _rng = math.Random(
+    42,
+  ); // fixed seed = same pattern every frame, no flicker
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    // Sparse, very faint dots — just enough to break up banding
+    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
+      final dx = _rng.nextDouble() * size.width;
+      final dy = _rng.nextDouble() * size.height;
+      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
+        alpha: 0.015,
+      );
+      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────
@@ -295,127 +331,83 @@ class KnifeThrowerGame extends FlameGame
         }
       }
 
-      // Load all knife and target assets
-      final List<String> assetsToLoad = [];
-      assetsToLoad.addAll(CustomizationService.knives);
-      assetsToLoad.addAll(CustomizationService.blueKnives);
-      assetsToLoad.addAll(CustomizationService.targets);
-      assetsToLoad.add(CustomizationService.getGreyKnife());
-      assetsToLoad.addAll(CustomizationService.brokenRedKnives);
-      assetsToLoad.addAll(CustomizationService.brokenBlueKnives);
-
-      // Remove duplicates and load
-      final uniqueAssets = assetsToLoad.toSet().toList();
-      await images.loadAll(
-        uniqueAssets.map(_getFilenameFromAssetPath).toList(),
-      );
-
-      // Get selected assets
-      final selectedKnifeFilename = _getFilenameFromAssetPath(
+      // Load only the necessary assets
+      await _loadAssetsAndInit(
         selectedKnifeAsset,
-      );
-      final selectedTargetFilename = _getFilenameFromAssetPath(
         selectedTargetAsset,
-      );
-
-      debugPrint(
-        'KnifeThrowerGame loading knife: $selectedKnifeFilename, target: $selectedTargetFilename',
-      );
-
-      // Load both red and blue versions of the selected knife
-      final selectedRedKnifeFilename = _getFilenameFromAssetPath(
-        selectedKnifeAsset,
-      );
-      final selectedBlueKnifeFilename = _getFilenameFromAssetPath(
-        CustomizationService.getBlueKnife(selectedKnifeAsset),
-      );
-      knifeRedSprite = await loadSprite(selectedRedKnifeFilename);
-      knifeBlueSprite = await loadSprite(selectedBlueKnifeFilename);
-      prePlacedKnifeSprite = await loadSprite(
-        _getFilenameFromAssetPath(CustomizationService.getGreyKnife()),
-      );
-      targetSprite = await loadSprite(selectedTargetFilename);
-      // Load broken knives based on selected index
-      final brokenRedKnifeAsset = CustomizationService.getBrokenRedKnifeByIndex(
         selectedKnifeIndex,
       );
-      final brokenBlueKnifeAsset =
-          CustomizationService.getBrokenBlueKnifeByIndex(selectedKnifeIndex);
-      brokenRedSprite = await loadSprite(
-        _getFilenameFromAssetPath(brokenRedKnifeAsset),
-      );
-      brokenBlueSprite = await loadSprite(
-        _getFilenameFromAssetPath(brokenBlueKnifeAsset),
-      );
-
-      knifeSizeRed = _calcKnifeSize(knifeRedSprite);
-      knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
-      prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
-      brokenKnifeSize = _calcKnifeSize(
-        brokenRedSprite,
-      ); // Assuming both broken knives have similar aspect ratio
-
-      target = Target();
-      add(target);
-
-      if (isBotMode) {
-        botController = BotController(this, difficulty: botDifficulty);
-      }
-
-      // Add initial pre-thrown knives to target (round 1 adds 0, which is correct)
-      _addPreThrownKnivesToTarget();
-
-      _spawnInitialKnives();
-      overlays.add('hud');
-      startCountdown();
     } catch (e) {
       debugPrint('Error in onLoad: $e');
       // Fallback to default assets
-      final defaultRedKnife = CustomizationService.knives[0];
-      final defaultBlueKnife = CustomizationService.getBlueKnife(
-        defaultRedKnife,
+      await _loadAssetsAndInit(
+        CustomizationService.knives[0],
+        CustomizationService.targets[0],
+        0,
       );
-      knifeRedSprite = await loadSprite(
-        _getFilenameFromAssetPath(defaultRedKnife),
-      );
-      knifeBlueSprite = await loadSprite(
-        _getFilenameFromAssetPath(defaultBlueKnife),
-      );
-      prePlacedKnifeSprite = await loadSprite(
-        _getFilenameFromAssetPath(CustomizationService.getGreyKnife()),
-      );
-      targetSprite = await loadSprite(
-        _getFilenameFromAssetPath(CustomizationService.targets[0]),
-      );
-      // Load broken knives based on index (default to 0 in fallback)
-      final fallbackBrokenRedKnife =
-          CustomizationService.getBrokenRedKnifeByIndex(0);
-      final fallbackBrokenBlueKnife =
-          CustomizationService.getBrokenBlueKnifeByIndex(0);
-      brokenRedSprite = await loadSprite(
-        _getFilenameFromAssetPath(fallbackBrokenRedKnife),
-      );
-      brokenBlueSprite = await loadSprite(
-        _getFilenameFromAssetPath(fallbackBrokenBlueKnife),
-      );
-
-      knifeSizeRed = _calcKnifeSize(knifeRedSprite);
-      knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
-      prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
-      brokenKnifeSize = _calcKnifeSize(brokenRedSprite);
-
-      target = Target();
-      add(target);
-
-      if (isBotMode) {
-        botController = BotController(this, difficulty: botDifficulty);
-      }
-
-      _addPreThrownKnivesToTarget();
-      _spawnInitialKnives();
-      overlays.add('hud');
-      startCountdown();
     }
+  }
+
+  Future<void> _loadAssetsAndInit(
+    String redKnifeAsset,
+    String targetAsset,
+    int knifeIndex,
+  ) async {
+    // Get all necessary filenames
+    final selectedRedKnifeFilename = _getFilenameFromAssetPath(redKnifeAsset);
+    final selectedBlueKnifeFilename = _getFilenameFromAssetPath(
+      CustomizationService.getBlueKnife(redKnifeAsset),
+    );
+    final selectedTargetFilename = _getFilenameFromAssetPath(targetAsset);
+    final greyKnifeFilename = _getFilenameFromAssetPath(
+      CustomizationService.getGreyKnife(),
+    );
+    final brokenRedFilename = _getFilenameFromAssetPath(
+      CustomizationService.getBrokenRedKnifeByIndex(knifeIndex),
+    );
+    final brokenBlueFilename = _getFilenameFromAssetPath(
+      CustomizationService.getBrokenBlueKnifeByIndex(knifeIndex),
+    );
+
+    // Load only the assets we need
+    await images.loadAll([
+      selectedRedKnifeFilename,
+      selectedBlueKnifeFilename,
+      selectedTargetFilename,
+      greyKnifeFilename,
+      brokenRedFilename,
+      brokenBlueFilename,
+    ]);
+
+    // Create sprites from cache
+    knifeRedSprite = Sprite(images.fromCache(selectedRedKnifeFilename));
+    knifeBlueSprite = Sprite(images.fromCache(selectedBlueKnifeFilename));
+    prePlacedKnifeSprite = Sprite(images.fromCache(greyKnifeFilename));
+    targetSprite = Sprite(images.fromCache(selectedTargetFilename));
+    brokenRedSprite = Sprite(images.fromCache(brokenRedFilename));
+    brokenBlueSprite = Sprite(images.fromCache(brokenBlueFilename));
+
+    // Calculate sizes
+    knifeSizeRed = _calcKnifeSize(knifeRedSprite);
+    knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
+    prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
+    brokenKnifeSize = _calcKnifeSize(
+      brokenRedSprite,
+    ); // Assuming both broken knives have similar aspect ratio
+
+    // Initialize target and bot
+    target = Target();
+    add(target);
+
+    if (isBotMode) {
+      botController = BotController(this, difficulty: botDifficulty);
+    }
+
+    // Add initial pre-thrown knives and start game
+    _addPreThrownKnivesToTarget();
+    _spawnInitialKnives();
+    overlays.add('hud');
+    startCountdown();
   }
 
   Future<void> startCountdown() async {
@@ -1826,6 +1818,11 @@ class _GameOverPlayerSection extends StatelessWidget {
           ),
           child: Stack(
             children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _NoiseOverlayPainter()),
+                ),
+              ),
               Positioned.fill(
                 child: Opacity(
                   opacity: 0.1,

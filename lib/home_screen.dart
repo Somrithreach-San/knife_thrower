@@ -4,6 +4,29 @@ import 'mode_selection_screen.dart';
 import 'customization_page.dart';
 import 'main.dart';
 
+class _NoiseOverlayPainter extends CustomPainter {
+  final _rng = math.Random(
+    42,
+  ); // fixed seed = same pattern every frame, no flicker
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    // Sparse, very faint dots — just enough to break up banding
+    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
+      final dx = _rng.nextDouble() * size.width;
+      final dy = _rng.nextDouble() * size.height;
+      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
+        alpha: 0.015,
+      );
+      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -53,89 +76,100 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            child: SafeArea(
-              bottom: true,
-              left: true,
-              right: true,
-              top: false,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 32 * scale,
-                  right: 32 * scale,
-                  bottom: 32 * scale,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(painter: _NoiseOverlayPainter()),
+                  ),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Logo at very top
-                    Image.asset(
-                      'assets/images/Home_page_logo.png',
-                      width: screenWidth * 0.7,
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
+                SafeArea(
+                  bottom: true,
+                  left: true,
+                  right: true,
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: 32 * scale,
+                      right: 32 * scale,
+                      bottom: 32 * scale,
                     ),
-                    // Spacer to push buttons to center
-                    const Spacer(),
-                    // Title
-                    Text(
-                      '2 PLAYER GAME',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14 * scale,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white.withValues(alpha: 0.5),
-                        fontFamily: 'Montserrat',
-                      ),
-                    ),
-                    SizedBox(height: 6 * scale),
-                    Text(
-                      'KNIFE THROWER',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 30 * scale,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        fontFamily: 'Montserrat',
-                      ),
-                    ),
-                    SizedBox(height: 40 * scale),
-                    // Play Button
-                    GameButton(
-                      label: 'PLAY',
-                      mainColor: const Color(0xFF2CDFA2),
-                      accentColor: const Color(0xFF52EBB6),
-                      lipColor: const Color(0xFF1C9B71),
-                      scale: scale,
-                      fontSize: 20,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const ModeSelectionScreen(),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Logo at very top
+                        Image.asset(
+                          'assets/images/Home_page_logo.png',
+                          width: screenWidth * 0.7,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                        ),
+                        // Spacer to push buttons to center
+                        const Spacer(),
+                        // Title
+                        Text(
+                          '2 PLAYER GAME',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14 * scale,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontFamily: 'Montserrat',
                           ),
-                        );
-                      },
-                    ),
-                    SizedBox(height: 25 * scale),
-                    // Customization Button
-                    GameButton(
-                      label: 'CUSTOMIZATION',
-                      mainColor: const Color(0xFF999999),
-                      accentColor: const Color(0xFF404040),
-                      lipColor: const Color(0xFF747373),
-                      scale: scale,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => const CustomizationPage(),
+                        ),
+                        SizedBox(height: 6 * scale),
+                        Text(
+                          'KNIFE THROWER',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 30 * scale,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            fontFamily: 'Montserrat',
                           ),
-                        );
-                      },
+                        ),
+                        SizedBox(height: 40 * scale),
+                        // Play Button
+                        GameButton(
+                          label: 'PLAY',
+                          mainColor: const Color(0xFF2CDFA2),
+                          accentColor: const Color(0xFF52EBB6),
+                          lipColor: const Color(0xFF1C9B71),
+                          scale: scale,
+                          fontSize: 20,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const ModeSelectionScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        SizedBox(height: 25 * scale),
+                        // Customization Button
+                        GameButton(
+                          label: 'CUSTOMIZATION',
+                          mainColor: const Color(0xFF999999),
+                          accentColor: const Color(0xFF404040),
+                          lipColor: const Color(0xFF747373),
+                          scale: scale,
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const CustomizationPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        const Spacer(),
+                      ],
                     ),
-                    const Spacer(),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           );
         },

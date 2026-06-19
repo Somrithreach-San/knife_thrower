@@ -4,6 +4,29 @@ import 'main.dart'; // To access GamePage and GameConfig
 import 'difficulty_screen.dart';
 import 'back_arrow_button.dart';
 
+class _NoiseOverlayPainter extends CustomPainter {
+  final _rng = math.Random(
+    42,
+  ); // fixed seed = same pattern every frame, no flicker
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    // Sparse, very faint dots — just enough to break up banding
+    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
+      final dx = _rng.nextDouble() * size.width;
+      final dy = _rng.nextDouble() * size.height;
+      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
+        alpha: 0.015,
+      );
+      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
+}
+
 enum GameButtonIcon { vsFriend, vsBot, easy, normal, hard }
 
 class GameButton extends StatefulWidget {
@@ -292,107 +315,118 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                 ],
               ),
             ),
-            child: SafeArea(
-              bottom: true,
-              left: true,
-              right: true,
-              top: false,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Main Content
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: 32 * scale,
-                      right: 32 * scale,
-                      bottom: 32 * scale,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Logo at very top
-                        Image.asset(
-                          'assets/images/Home_page_logo.png',
-                          width: screenWidth * 0.7,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                        ),
-                        // Spacer to push buttons to center
-                        const Spacer(),
-                        // Title
-                        Text(
-                          'CHOOSE YOUR MODE',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14 * scale,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontFamily: 'Montserrat',
-                          ),
-                        ),
-                        SizedBox(height: 6 * scale),
-                        Text(
-                          'START PLAYING',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 30 * scale,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            fontFamily: 'Montserrat',
-                          ),
-                        ),
-                        SizedBox(height: 40 * scale),
-                        // Play vs Friend Button
-                        GameButton(
-                          label: 'VS. FRIEND',
-                          mainColor: const Color(0xFF2CDFA2),
-                          accentColor: const Color(0xFF52EBB6),
-                          lipColor: const Color(0xFF1C9B71),
-                          icon: GameButtonIcon.vsFriend,
-                          scale: scale,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const GamePage(),
-                              ),
-                            );
-                          },
-                        ),
-                        SizedBox(height: 25 * scale),
-                        // Play vs Bot Button
-                        GameButton(
-                          label: 'VS. BOT',
-                          mainColor: const Color(0xFFFFB300),
-                          accentColor: const Color(0xFFFFCA28),
-                          lipColor: const Color(0xFFC67C00),
-                          icon: GameButtonIcon.vsBot,
-                          scale: scale,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const DifficultyScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const Spacer(),
-                      ],
-                    ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(painter: _NoiseOverlayPainter()),
                   ),
-                  // Back Arrow (on top of content)
-                  Positioned(
-                    top: 16 * scale,
-                    left: 16 * scale,
-                    child: SafeArea(
-                      child: BackArrowButton(
-                        onTap: () => Navigator.of(context).pop(),
-                        scale: scale,
+                ),
+                SafeArea(
+                  bottom: true,
+                  left: true,
+                  right: true,
+                  top: false,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Main Content
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: 32 * scale,
+                          right: 32 * scale,
+                          bottom: 32 * scale,
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Logo at very top
+                            Image.asset(
+                              'assets/images/Home_page_logo.png',
+                              width: screenWidth * 0.7,
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.high,
+                            ),
+                            // Spacer to push buttons to center
+                            const Spacer(),
+                            // Title
+                            Text(
+                              'CHOOSE YOUR MODE',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14 * scale,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontFamily: 'Montserrat',
+                              ),
+                            ),
+                            SizedBox(height: 6 * scale),
+                            Text(
+                              'START PLAYING',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 30 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                fontFamily: 'Montserrat',
+                              ),
+                            ),
+                            SizedBox(height: 40 * scale),
+                            // Play vs Friend Button
+                            GameButton(
+                              label: 'VS. FRIEND',
+                              mainColor: const Color(0xFF2CDFA2),
+                              accentColor: const Color(0xFF52EBB6),
+                              lipColor: const Color(0xFF1C9B71),
+                              icon: GameButtonIcon.vsFriend,
+                              scale: scale,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) => const GamePage(),
+                                  ),
+                                );
+                              },
+                            ),
+                            SizedBox(height: 25 * scale),
+                            // Play vs Bot Button
+                            GameButton(
+                              label: 'VS. BOT',
+                              mainColor: const Color(0xFFFFB300),
+                              accentColor: const Color(0xFFFFCA28),
+                              lipColor: const Color(0xFFC67C00),
+                              icon: GameButtonIcon.vsBot,
+                              scale: scale,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const DifficultyScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            const Spacer(),
+                          ],
+                        ),
                       ),
-                    ),
+                      // Back Arrow (on top of content)
+                      Positioned(
+                        top: 16 * scale,
+                        left: 16 * scale,
+                        child: SafeArea(
+                          child: BackArrowButton(
+                            onTap: () => Navigator.of(context).pop(),
+                            scale: scale,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },

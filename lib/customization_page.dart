@@ -1,5 +1,29 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'customization_service.dart';
+
+class _NoiseOverlayPainter extends CustomPainter {
+  final _rng = math.Random(
+    42,
+  ); // fixed seed = same pattern every frame, no flicker
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint();
+    // Sparse, very faint dots — just enough to break up banding
+    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
+      final dx = _rng.nextDouble() * size.width;
+      final dy = _rng.nextDouble() * size.height;
+      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
+        alpha: 0.015,
+      );
+      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
+}
 
 class CustomizationPage extends StatefulWidget {
   const CustomizationPage({super.key});
@@ -114,13 +138,18 @@ class _CustomizationPageState extends State<CustomizationPage> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF181D35), Color(0xFF112E55)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
           ),
         ),
         child: Stack(
           children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(painter: _NoiseOverlayPainter()),
+              ),
+            ),
             // Back arrow at exact Figma position
             Positioned(
               left: 35,
@@ -362,11 +391,11 @@ class _ItemCardState extends State<_ItemCard> {
                     children: [
                       // Main circle (light gray)
                       Positioned(
-                        left: 17,
-                        top: 32,
+                        left: 25,
+                        top: 40,
                         child: Container(
-                          width: 96,
-                          height: 96,
+                          width: 80,
+                          height: 80,
                           decoration: const BoxDecoration(
                             color: Color(0xFFE1E1E1),
                             shape: BoxShape.circle,
@@ -412,23 +441,23 @@ class _ItemCardState extends State<_ItemCard> {
                       ),
                       // Knife image centered in main circle
                       Positioned(
-                        left: 17,
-                        top: 32,
+                        left: 10,
+                        top: 25,
                         child: SizedBox(
-                          width: 96,
-                          height: 96,
+                          width: 110,
+                          height: 110,
                           child: Center(
                             child: Transform.flip(
                               flipY: widget.knife['flipY'] as bool,
                               child: Transform.rotate(
                                 angle: widget.knife['rotation'] as double,
                                 child: SizedBox(
-                                  width: 109.51,
-                                  height: 109.51,
+                                  width: 125,
+                                  height: 125,
                                   child: Image.asset(
                                     widget.knife['asset'] as String,
-                                    width: 109.51,
-                                    height: 109.51,
+                                    width: 125,
+                                    height: 125,
                                     fit: BoxFit.contain,
                                     filterQuality: FilterQuality.high,
                                   ),
