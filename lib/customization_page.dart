@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'customization_service.dart';
-import 'back_arrow_button.dart';
 
 class CustomizationPage extends StatefulWidget {
   const CustomizationPage({super.key});
@@ -110,57 +109,63 @@ class _CustomizationPageState extends State<CustomizationPage> {
   Widget build(BuildContext context) {
     final statusBarH = MediaQuery.of(context).padding.top;
     return Scaffold(
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final scale =
-              1.0; // Using fixed scale for customization page to match original
-          return Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFF181D35), Color(0xFF112E55)],
-              ),
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF181D35), Color(0xFF112E55)],
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Back arrow at exact Figma position
+            Positioned(
+              left: 35,
+              top: statusBarH + 20,
+              child: _buildBackArrow(),
             ),
-            child: Stack(
-              children: [
-                // Back arrow at consistent position
-                Positioned(
-                  left: 16 * scale,
-                  top: 16 * scale,
-                  child: SafeArea(child: _buildBackArrow(scale: scale)),
-                ),
-                // Toggle
-                Positioned(
-                  top: statusBarH + 80,
-                  left: 0,
-                  right: 0,
-                  child: _buildToggle(),
-                ),
-                // Grid
-                Positioned(
-                  top: statusBarH + 181,
-                  left: 52,
-                  right: 52,
-                  bottom: 0,
-                  child: _isLoading
-                      ? const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        )
-                      : _buildGrid(),
-                ),
-              ],
+            // Toggle
+            Positioned(
+              top: statusBarH + 80,
+              left: 0,
+              right: 0,
+              child: _buildToggle(),
             ),
-          );
-        },
+            // Grid
+            Positioned(
+              top: statusBarH + 181,
+              left: 52,
+              right: 52,
+              bottom: 0,
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    )
+                  : _buildGrid(),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildBackArrow({double scale = 1.0}) {
-    return BackArrowButton(onTap: () => Navigator.pop(context), scale: scale);
+  Widget _buildBackArrow() {
+    return GestureDetector(
+      onTap: () => Navigator.pop(context),
+      child: Container(
+        width: 40,
+        height: 40,
+        color: Colors.transparent,
+        child: const Icon(
+          Icons.arrow_back_ios_new,
+          color: Colors.white,
+          size: 22,
+        ),
+      ),
+    );
   }
 
   Widget _buildToggle() {
@@ -311,7 +316,7 @@ class _ItemCardState extends State<_ItemCard> {
 
   @override
   Widget build(BuildContext context) {
-    const lipHeight = 4.0;
+    const lipHeight = 5.0;
     const baseWidth = 130.0;
     const baseHeight = 160.0;
     return GestureDetector(
@@ -324,7 +329,7 @@ class _ItemCardState extends State<_ItemCard> {
         height: baseHeight,
         child: Stack(
           children: [
-            // 3D bottom lip
+            // 3D bottom lip (darker gray)
             Positioned(
               bottom: 0,
               left: 0,
@@ -332,12 +337,12 @@ class _ItemCardState extends State<_ItemCard> {
               height: baseHeight - lipHeight,
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF676E7B),
+                  color: const Color(0xFF686D76),
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
-            // Main face
+            // Main face (lighter gray)
             AnimatedPositioned(
               duration: _isPressed
                   ? const Duration(milliseconds: 50)
@@ -345,17 +350,17 @@ class _ItemCardState extends State<_ItemCard> {
               top: _isPressed ? lipHeight : 0,
               left: 0,
               right: 0,
-              height: baseHeight - lipHeight,
+              bottom: _isPressed ? 0 : lipHeight,
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF778090),
+                  color: const Color(0xFF8B909A),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Stack(
                     children: [
-                      // Main circle (D9D9D9)
+                      // Main circle (light gray)
                       Positioned(
                         left: 17,
                         top: 32,
@@ -363,7 +368,7 @@ class _ItemCardState extends State<_ItemCard> {
                           width: 96,
                           height: 96,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFD9D9D9),
+                            color: Color(0xFFE1E1E1),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -376,7 +381,7 @@ class _ItemCardState extends State<_ItemCard> {
                           width: 17,
                           height: 17,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFE6E4E4),
+                            color: Color(0xFFEAEAEA),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -388,7 +393,7 @@ class _ItemCardState extends State<_ItemCard> {
                           width: 11,
                           height: 11,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFE6E4E4),
+                            color: Color(0xFFEAEAEA),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -400,7 +405,7 @@ class _ItemCardState extends State<_ItemCard> {
                           width: 8,
                           height: 8,
                           decoration: const BoxDecoration(
-                            color: Color(0xFFE6E4E4),
+                            color: Color(0xFFEAEAEA),
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -433,23 +438,16 @@ class _ItemCardState extends State<_ItemCard> {
                           ),
                         ),
                       ),
-                      // Selected checkmark badge
+                      // Selected checkmark
                       if (widget.isSelected)
                         Positioned(
                           right: 10,
                           top: 10,
-                          child: Container(
+                          child: Image.asset(
+                            'assets/images/selected.png',
                             width: 28,
                             height: 28,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF4CAF50),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 18,
-                            ),
+                            fit: BoxFit.contain,
                           ),
                         ),
                     ],

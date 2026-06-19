@@ -1341,13 +1341,6 @@ class HudOverlay extends StatelessWidget {
                       topRight: Radius.circular(60),
                       bottomRight: Radius.circular(60),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 10,
-                        offset: Offset(2, 2),
-                      ),
-                    ],
                   ),
                   child: Padding(
                     padding: const EdgeInsets.only(left: 40),
@@ -1483,13 +1476,6 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
             topLeft: Radius.circular(60),
             bottomLeft: Radius.circular(60),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black26,
-              blurRadius: 10,
-              offset: Offset(-2, 2),
-            ),
-          ],
         ),
         child: Stack(
           alignment: Alignment.centerLeft,

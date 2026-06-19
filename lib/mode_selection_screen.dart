@@ -72,27 +72,11 @@ class _GameButtonState extends State<GameButton> {
               top: _pressed ? lipHeight * widget.scale : 0,
               left: 0,
               right: 0,
-              height: 60 * widget.scale,
+              bottom: _pressed ? 0 : lipHeight * widget.scale,
               child: Container(
                 decoration: BoxDecoration(
                   color: widget.mainColor,
                   borderRadius: BorderRadius.circular(8 * widget.scale),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.25),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                      spreadRadius: 0,
-                      blurStyle: BlurStyle.inner,
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, -2),
-                      spreadRadius: 0,
-                      blurStyle: BlurStyle.inner,
-                    ),
-                  ],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8 * widget.scale),
