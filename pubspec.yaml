@@ -37,6 +37,7 @@ dependencies:
   flame: ^1.18.0
   flame_audio: ^2.10.1
   audioplayers: ^5.2.1
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
@@ -54,9 +55,9 @@ dev_dependencies:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/images/game_icon.png"
-  adaptive_icon_background: "#0F1727"
-  adaptive_icon_foreground: "assets/images/game_icon.png"
+  image_path: "assets/images/Android App Icons.png"
+  image_path_ios: "assets/images/iOS App Icons.png"
+  remove_alpha_ios: true
   min_sdk_android: 21
 
 
@@ -109,3 +110,23 @@ flutter:
         - asset: assets/fonts/Programme/programme_normal.ttf
         - asset: assets/fonts/Programme/programme_bold.ttf
           weight: 700
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat/static/Montserrat-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/Montserrat/static/Montserrat-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/Montserrat/static/Montserrat-Light.ttf
+          weight: 300
+        - asset: assets/fonts/Montserrat/static/Montserrat-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Montserrat/static/Montserrat-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Montserrat/static/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Montserrat/static/Montserrat-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat/static/Montserrat-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Montserrat/static/Montserrat-Black.ttf
+          weight: 900

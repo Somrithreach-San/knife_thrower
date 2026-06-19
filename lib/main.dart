@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'home_screen.dart';
 import 'utils.dart';
 import 'bot_ai.dart';
+import 'customization_service.dart';
 
 // ─────────────────────────────────────────────
 //  CONSTANTS
@@ -19,11 +20,13 @@ class GameConfig {
   static const double baseHeight = 812.0;
 
   static const double targetRadius = 125.0;
-  static const double knifeLength = 130.0;
+  static const double knifeLength = 140.0; // Adjust if knife is too short/long
   static const double knifeSpeed = 1600.0;
-  static const double baseTargetSpeed = 1.5;
-  static const double collisionAngle = 0.15;
-  static const double embedDepth = 0.70;
+  static const double baseTargetSpeed = 2.0;
+  static const double collisionAngle =
+      0.22; // Larger = more space between stuck knives
+  static const double embedDepth =
+      0.55; // Adjust if knife sticks too far out/in (0 = none, 1 = all)
   static const double swipeMinDistance = 18.0;
   static const int knivesPerRound = 7; // 7 throws per player per round
   static const int winningScore = 20; // First to 20 wins
@@ -85,27 +88,80 @@ class GamePage extends StatefulWidget {
 
 class _GamePageState extends State<GamePage> {
   late final KnifeThrowerGame _game;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _game = KnifeThrowerGame(
-      isBotMode: widget.isBotMode,
-      botDifficulty: widget.botDifficulty,
-    );
+    _loadGame();
+  }
+
+  Future<void> _loadGame() async {
+    try {
+      final selectedKnifeIndex =
+          await CustomizationService.getSelectedKnifeIndex();
+      final selectedKnife = await CustomizationService.getSelectedKnife();
+      final selectedTarget = await CustomizationService.getSelectedTarget();
+      debugPrint(
+        'Game loading with knife index: $selectedKnifeIndex, knife: $selectedKnife, target: $selectedTarget',
+      );
+      if (mounted) {
+        setState(() {
+          _game = KnifeThrowerGame(
+            isBotMode: widget.isBotMode,
+            botDifficulty: widget.botDifficulty,
+            selectedKnifeAsset: selectedKnife,
+            selectedTargetAsset: selectedTarget,
+            selectedKnifeIndex: selectedKnifeIndex,
+          );
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading game: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          // Fallback to default assets
+          _game = KnifeThrowerGame(
+            isBotMode: widget.isBotMode,
+            botDifficulty: widget.botDifficulty,
+            selectedKnifeAsset: CustomizationService.knives[0],
+            selectedTargetAsset: CustomizationService.targets[0],
+            selectedKnifeIndex: 0,
+          );
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
     return Scaffold(
-      body: GameWidget(
-        game: _game,
-        overlayBuilderMap: {
-          'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
-          'gameOver': (ctx, g) => GameOverOverlay(game: g as KnifeThrowerGame),
-          'countdown': (ctx, g) =>
-              CountdownOverlay(game: g as KnifeThrowerGame),
-        },
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
+          ),
+        ),
+        child: GameWidget(
+          game: _game,
+          overlayBuilderMap: {
+            'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
+            'gameOver': (ctx, g) =>
+                GameOverOverlay(game: g as KnifeThrowerGame),
+            'countdown': (ctx, g) =>
+                CountdownOverlay(game: g as KnifeThrowerGame),
+          },
+        ),
       ),
     );
   }
@@ -139,9 +195,15 @@ class KnifeThrowerGame extends FlameGame
     with TapCallbacks, MultiTouchDragDetector {
   final bool isBotMode;
   final BotDifficulty botDifficulty;
+  final String selectedKnifeAsset;
+  final String selectedTargetAsset;
+  final int selectedKnifeIndex;
   KnifeThrowerGame({
     this.isBotMode = false,
     this.botDifficulty = BotDifficulty.medium,
+    required this.selectedKnifeAsset,
+    required this.selectedTargetAsset,
+    required this.selectedKnifeIndex,
   });
 
   static final _rng = math.Random();
@@ -158,8 +220,6 @@ class KnifeThrowerGame extends FlameGame
   late Sprite knifeRedSprite;
   late Sprite prePlacedKnifeSprite;
   late Sprite targetSprite;
-  late Sprite targetCrackedInitialSprite;
-  late Sprite targetCrackedSuperSprite;
   late Sprite brokenRedSprite;
   late Sprite brokenBlueSprite;
 
@@ -201,79 +261,161 @@ class KnifeThrowerGame extends FlameGame
   double get scaleFactor =>
       math.min(size.x / GameConfig.baseWidth, size.y / GameConfig.baseHeight);
 
+  String _getFilenameFromAssetPath(String path) {
+    return path.split('/').last;
+  }
+
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
+    try {
+      await super.onLoad();
 
-    // Initialize audio pools for high-frequency sound effects only
-    // This reduces resource usage and avoids initialization delays
-    final highFreqSounds = [
-      'Arrow_Hit_1.ogg',
-      'Arrow_Hit_2.ogg',
-      'Arrow_Hit_3.ogg',
-      'Arrow_Throw_1.ogg',
-      'Arrow_Throw_2.ogg',
-      'Arrow_Throw_3.ogg',
-      'Metal_Clashed.ogg',
-      'Tree_trunk_target_cracking_1.mp3',
-      'Tree_trunk_target_cracking_2.mp3',
-    ];
+      // Initialize audio pools for high-frequency sound effects only
+      // This reduces resource usage and avoids initialization delays
+      final highFreqSounds = [
+        'Arrow_Hit_1.ogg',
+        'Arrow_Hit_2.ogg',
+        'Arrow_Hit_3.ogg',
+        'Arrow_Throw_1.ogg',
+        'Arrow_Throw_2.ogg',
+        'Arrow_Throw_3.ogg',
+        'Metal_Clashed.ogg',
+        // 'Tree_trunk_target_cracking_1.mp3',
+        // 'Tree_trunk_target_cracking_2.mp3',
+      ];
 
-    for (final sound in highFreqSounds) {
-      try {
-        _audioPools[sound] = await AudioPool.create(
-          source: AssetSource('audio/$sound'),
-          maxPlayers: 4,
-        );
-      } catch (e) {
-        debugPrint('Error creating AudioPool for $sound: $e');
+      for (final sound in highFreqSounds) {
+        try {
+          _audioPools[sound] = await AudioPool.create(
+            source: AssetSource('audio/$sound'),
+            maxPlayers: 4,
+          );
+        } catch (e) {
+          debugPrint('Error creating AudioPool for $sound: $e');
+        }
       }
+
+      // Load all knife and target assets
+      final List<String> assetsToLoad = [];
+      assetsToLoad.addAll(CustomizationService.knives);
+      assetsToLoad.addAll(CustomizationService.blueKnives);
+      assetsToLoad.addAll(CustomizationService.targets);
+      assetsToLoad.add(CustomizationService.getGreyKnife());
+      assetsToLoad.addAll(CustomizationService.brokenRedKnives);
+      assetsToLoad.addAll(CustomizationService.brokenBlueKnives);
+
+      // Remove duplicates and load
+      final uniqueAssets = assetsToLoad.toSet().toList();
+      await images.loadAll(
+        uniqueAssets.map(_getFilenameFromAssetPath).toList(),
+      );
+
+      // Get selected assets
+      final selectedKnifeFilename = _getFilenameFromAssetPath(
+        selectedKnifeAsset,
+      );
+      final selectedTargetFilename = _getFilenameFromAssetPath(
+        selectedTargetAsset,
+      );
+
+      debugPrint(
+        'KnifeThrowerGame loading knife: $selectedKnifeFilename, target: $selectedTargetFilename',
+      );
+
+      // Load both red and blue versions of the selected knife
+      final selectedRedKnifeFilename = _getFilenameFromAssetPath(
+        selectedKnifeAsset,
+      );
+      final selectedBlueKnifeFilename = _getFilenameFromAssetPath(
+        CustomizationService.getBlueKnife(selectedKnifeAsset),
+      );
+      knifeRedSprite = await loadSprite(selectedRedKnifeFilename);
+      knifeBlueSprite = await loadSprite(selectedBlueKnifeFilename);
+      prePlacedKnifeSprite = await loadSprite(
+        _getFilenameFromAssetPath(CustomizationService.getGreyKnife()),
+      );
+      targetSprite = await loadSprite(selectedTargetFilename);
+      // Load broken knives based on selected index
+      final brokenRedKnifeAsset = CustomizationService.getBrokenRedKnifeByIndex(
+        selectedKnifeIndex,
+      );
+      final brokenBlueKnifeAsset =
+          CustomizationService.getBrokenBlueKnifeByIndex(selectedKnifeIndex);
+      brokenRedSprite = await loadSprite(
+        _getFilenameFromAssetPath(brokenRedKnifeAsset),
+      );
+      brokenBlueSprite = await loadSprite(
+        _getFilenameFromAssetPath(brokenBlueKnifeAsset),
+      );
+
+      knifeSizeRed = _calcKnifeSize(knifeRedSprite);
+      knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
+      prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
+      brokenKnifeSize = _calcKnifeSize(
+        brokenRedSprite,
+      ); // Assuming both broken knives have similar aspect ratio
+
+      target = Target();
+      add(target);
+
+      if (isBotMode) {
+        botController = BotController(this, difficulty: botDifficulty);
+      }
+
+      // Add initial pre-thrown knives to target (round 1 adds 0, which is correct)
+      _addPreThrownKnivesToTarget();
+
+      _spawnInitialKnives();
+      overlays.add('hud');
+      startCountdown();
+    } catch (e) {
+      debugPrint('Error in onLoad: $e');
+      // Fallback to default assets
+      final defaultRedKnife = CustomizationService.knives[0];
+      final defaultBlueKnife = CustomizationService.getBlueKnife(
+        defaultRedKnife,
+      );
+      knifeRedSprite = await loadSprite(
+        _getFilenameFromAssetPath(defaultRedKnife),
+      );
+      knifeBlueSprite = await loadSprite(
+        _getFilenameFromAssetPath(defaultBlueKnife),
+      );
+      prePlacedKnifeSprite = await loadSprite(
+        _getFilenameFromAssetPath(CustomizationService.getGreyKnife()),
+      );
+      targetSprite = await loadSprite(
+        _getFilenameFromAssetPath(CustomizationService.targets[0]),
+      );
+      // Load broken knives based on index (default to 0 in fallback)
+      final fallbackBrokenRedKnife =
+          CustomizationService.getBrokenRedKnifeByIndex(0);
+      final fallbackBrokenBlueKnife =
+          CustomizationService.getBrokenBlueKnifeByIndex(0);
+      brokenRedSprite = await loadSprite(
+        _getFilenameFromAssetPath(fallbackBrokenRedKnife),
+      );
+      brokenBlueSprite = await loadSprite(
+        _getFilenameFromAssetPath(fallbackBrokenBlueKnife),
+      );
+
+      knifeSizeRed = _calcKnifeSize(knifeRedSprite);
+      knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
+      prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
+      brokenKnifeSize = _calcKnifeSize(brokenRedSprite);
+
+      target = Target();
+      add(target);
+
+      if (isBotMode) {
+        botController = BotController(this, difficulty: botDifficulty);
+      }
+
+      _addPreThrownKnivesToTarget();
+      _spawnInitialKnives();
+      overlays.add('hud');
+      startCountdown();
     }
-
-    await images.loadAll([
-      'blue_knife.png',
-      'red_knife.png',
-      'pre_placed_knife.png',
-      'tree_truck_target.png',
-      'initial_cracked_tree_truck_target.png',
-      'super_cracked_tree_truck_target.png',
-      'broken_red_knife.png',
-      'broken_blue_knife.png',
-    ]);
-
-    knifeBlueSprite = await loadSprite('blue_knife.png');
-    knifeRedSprite = await loadSprite('red_knife.png');
-    prePlacedKnifeSprite = await loadSprite('pre_placed_knife.png');
-    targetSprite = await loadSprite('tree_truck_target.png');
-    targetCrackedInitialSprite = await loadSprite(
-      'initial_cracked_tree_truck_target.png',
-    );
-    targetCrackedSuperSprite = await loadSprite(
-      'super_cracked_tree_truck_target.png',
-    );
-    brokenRedSprite = await loadSprite('broken_red_knife.png');
-    brokenBlueSprite = await loadSprite('broken_blue_knife.png');
-
-    knifeSizeRed = _calcKnifeSize(knifeRedSprite);
-    knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
-    prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
-    brokenKnifeSize = _calcKnifeSize(
-      brokenRedSprite,
-    ); // Assuming both broken knives have similar aspect ratio
-
-    target = Target();
-    add(target);
-
-    if (isBotMode) {
-      botController = BotController(this, difficulty: botDifficulty);
-    }
-
-    // Add initial pre-thrown knives to target (round 1 adds 0, which is correct)
-    _addPreThrownKnivesToTarget();
-
-    _spawnInitialKnives();
-    overlays.add('hud');
-    startCountdown();
   }
 
   Future<void> startCountdown() async {
@@ -307,7 +449,7 @@ class KnifeThrowerGame extends FlameGame
   }
 
   @override
-  Color backgroundColor() => const Color(0xFF35526C);
+  Color backgroundColor() => Colors.transparent;
 
   void _addPreThrownKnivesToTarget() {
     // Calculate how many pre-thrown knives to add based on current round
@@ -832,25 +974,9 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     }
 
     if (playerHits != null) {
-      final oldRoundHits = roundHits;
       roundHits = playerHits;
-
-      if (roundHits >= 10) {
-        if (oldRoundHits < 10) {
-          game.playPoolSound('Tree_trunk_target_cracking_2.mp3', volume: 0.4);
-        }
-        _visual.sprite = game.targetCrackedSuperSprite;
-        _visual.scale = Vector2.all(1.0); // Reset scale for cracked versions
-      } else if (roundHits >= 5) {
-        if (oldRoundHits < 5) {
-          game.playPoolSound('Tree_trunk_target_cracking_1.mp3', volume: 0.4);
-        }
-        _visual.sprite = game.targetCrackedInitialSprite;
-        _visual.scale = Vector2.all(1.0); // Reset scale for cracked versions
-      } else {
-        _visual.sprite = game.targetSprite;
-        _visual.scale = Vector2.all(GameConfig.baseTargetExtraScale);
-      }
+      _visual.sprite = game.targetSprite;
+      _visual.scale = Vector2.all(1.0);
     }
   }
 
@@ -861,12 +987,12 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     stuckKnifeCount = 0;
     roundHits = 0;
     _visual.sprite = game.targetSprite;
-    _visual.scale = Vector2.all(GameConfig.baseTargetExtraScale);
+    _visual.scale = Vector2.all(1.0);
     _generateNextBehaviorInterval();
   }
 
   void _generateNextBehaviorInterval() {
-    _nextChangeInterval = 2.0 + KnifeThrowerGame._rng.nextDouble() * 2.5;
+    _nextChangeInterval = 1.2 + KnifeThrowerGame._rng.nextDouble() * 2.0;
   }
 
   @override
@@ -888,7 +1014,7 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
       _behaviorTimer = 0.0;
       _generateNextBehaviorInterval();
 
-      if (KnifeThrowerGame._rng.nextDouble() < 0.60) {
+      if (KnifeThrowerGame._rng.nextDouble() < 0.75) {
         _directionSign *= -1.0;
       }
     }
@@ -1123,7 +1249,7 @@ class CountdownOverlay extends StatelessWidget {
                 color: Colors.white,
                 fontSize: 120 * scale,
                 fontWeight: FontWeight.w900,
-                fontFamily: 'Programme',
+                fontFamily: 'Montserrat',
                 shadows: const [
                   Shadow(
                     color: Colors.black45,
@@ -1236,7 +1362,7 @@ class HudOverlay extends StatelessWidget {
                               builder: (_, v, _) => Text(
                                 '$v',
                                 style: const TextStyle(
-                                  fontFamily: 'Programme',
+                                  fontFamily: 'Montserrat',
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.redAccent,
@@ -1248,7 +1374,7 @@ class HudOverlay extends StatelessWidget {
                               child: Text(
                                 '.',
                                 style: TextStyle(
-                                  fontFamily: 'Programme',
+                                  fontFamily: 'Montserrat',
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.black54,
@@ -1260,7 +1386,7 @@ class HudOverlay extends StatelessWidget {
                               builder: (_, v, _) => Text(
                                 '$v',
                                 style: const TextStyle(
-                                  fontFamily: 'Programme',
+                                  fontFamily: 'Montserrat',
                                   fontSize: 18,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.blueAccent,
@@ -1315,7 +1441,10 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
 
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        Navigator.of(context).pop();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (route) => false,
+        );
       }
     });
   }
@@ -1383,7 +1512,7 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
                 child: Text(
                   'EXIT',
                   style: TextStyle(
-                    fontFamily: 'Programme',
+                    fontFamily: 'Montserrat',
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
                     color: Colors.black87,
@@ -1588,40 +1717,65 @@ class _GameOverOverlayState extends State<GameOverOverlay>
       builder: (context, winner, _) {
         return FadeTransition(
           opacity: _fadeAnimation,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () {
-              if (!_canRestart) return;
-              widget.game.restartGame();
-              widget.game.overlays.remove('gameOver');
-              widget.game.overlays.add('hud');
-            },
-            child: Material(
-              color: Colors.transparent,
-              child: Column(
-                children: [
-                  // Top half (Blue player)
-                  Expanded(
-                    child: RotatedBox(
-                      quarterTurns: 2,
-                      child: _GameOverPlayerSection(
-                        player: 2,
-                        winner: winner,
-                        canRestart: _canRestart,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = math.min(
+                constraints.maxWidth / GameConfig.baseWidth,
+                constraints.maxHeight / GameConfig.baseHeight,
+              );
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (!_canRestart) return;
+                  widget.game.restartGame();
+                  widget.game.overlays.remove('gameOver');
+                  widget.game.overlays.add('hud');
+                },
+                child: Material(
+                  color: Colors.transparent,
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          // Top half (Blue player)
+                          Expanded(
+                            child: RotatedBox(
+                              quarterTurns: 2,
+                              child: _GameOverPlayerSection(
+                                player: 2,
+                                winner: winner,
+                                canRestart: _canRestart,
+                              ),
+                            ),
+                          ),
+                          // Bottom half (Red player)
+                          Expanded(
+                            child: _GameOverPlayerSection(
+                              player: 1,
+                              winner: winner,
+                              canRestart: _canRestart,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
+                      // Single exit button on the right (same as game screen)
+                      Positioned(
+                        right: -40 * scale,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: Transform.scale(
+                            scale: scale,
+                            alignment: Alignment.centerRight,
+                            child: const HoldToExitButton(),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  // Bottom half (Red player)
-                  Expanded(
-                    child: _GameOverPlayerSection(
-                      player: 1,
-                      winner: winner,
-                      canRestart: _canRestart,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         );
       },

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'dart:math' as math;
-import 'main.dart'; // To access GamePage and GameConfig
-import 'difficulty_screen.dart';
-
-import 'package:flame_audio/flame_audio.dart';
+import 'mode_selection_screen.dart';
+import 'customization_page.dart';
+import 'main.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,49 +19,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAssets() async {
-    // Precache the header image for Flutter's ImageCache
+    // Precache the logo for Flutter's ImageCache
     precacheImage(
-      const AssetImage('assets/images/header_bagckground_image.png'),
+      const AssetImage('assets/images/Home_page_logo.png'),
       context,
     );
-
-    try {
-      // 1. Pre-load Images into Flame's cache for the game
-      final tempGame = KnifeThrowerGame();
-      await tempGame.images.loadAll([
-        'blue_knife.png',
-        'red_knife.png',
-        'pre_placed_knife.png',
-        'tree_truck_target.png',
-        'initial_cracked_tree_truck_target.png',
-        'super_cracked_tree_truck_target.png',
-        'mystery_box.png',
-        'broken_red_knife.png',
-        'broken_blue_knife.png',
-      ]);
-
-      // 2. Pre-load Audio Cache
-      await FlameAudio.audioCache.loadAll([
-        'Arrow_Hit_1.ogg',
-        'Arrow_Hit_2.ogg',
-        'Arrow_Hit_3.ogg',
-        'Arrow_Throw_1.ogg',
-        'Arrow_Throw_2.ogg',
-        'Arrow_Throw_3.ogg',
-        'Metal_Clashed.ogg',
-        'Mystery_Box_Recieved.mp3',
-        'Tree_trunk_target_cracking_1.mp3',
-        'Tree_trunk_target_cracking_2.mp3',
-      ]);
-    } catch (error) {
-      debugPrint('Asset load error: $error');
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE3F2FD),
+      backgroundColor: Colors.black,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
@@ -77,256 +43,102 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              color: Color(
-                0xFFE3F2FD,
-              ), // Base light blue color for the bottom half
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF1a1a2e),
+                  Color(0xFF16213e),
+                  Color(0xFF0f3460),
+                ],
+              ),
             ),
-            child: Stack(
-              children: [
-                // Header Background Image
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: screenHeight * 0.4, // Match the hard split height
-                  child: Image.asset(
-                    'assets/images/header_bagckground_image.png',
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                  ),
+            child: SafeArea(
+              bottom: true,
+              left: true,
+              right: true,
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 32 * scale,
+                  right: 32 * scale,
+                  bottom: 32 * scale,
                 ),
-                SafeArea(
-                  child: Column(
-                    children: [
-                      SizedBox(height: 80 * scale),
-                      // Title
-                      Text(
-                        'KNIFE\nTHROWER',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Programme',
-                          fontSize: 48 * scale,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          height: 0.9,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black.withValues(alpha: 0.5),
-                              offset: const Offset(0, 4),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Logo at very top
+                    Image.asset(
+                      'assets/images/Home_page_logo.png',
+                      width: screenWidth * 0.7,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
+                    // Spacer to push buttons to center
+                    const Spacer(),
+                    // Title
+                    Text(
+                      '2 PLAYER GAME',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14 * scale,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontFamily: 'Montserrat',
                       ),
-                      SizedBox(height: 16 * scale),
-                      // Main Card
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24 * scale),
-                        child: Container(
-                          width: double.infinity,
-                          height: screenHeight * 0.6,
-                          padding: EdgeInsets.all(24 * scale),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(32 * scale),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            children: [
-                              SizedBox(height: 16 * scale),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  'Tap to throw knives. Land in\nthe wood, avoiding other\nknives. First to 20 wins.',
-                                  textAlign: TextAlign.left,
-                                  style: TextStyle(
-                                    fontFamily: 'Programme',
-                                    fontSize: 18 * scale,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.2,
-                                    color: Colors.black.withValues(alpha: 0.85),
-                                  ),
-                                ),
-                              ),
-                              const Spacer(),
-                              // How to Play Button
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  vertical: 8 * scale,
-                                  horizontal: 16 * scale,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF78909C),
-                                  borderRadius: BorderRadius.circular(
-                                    12 * scale,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      padding: EdgeInsets.all(4 * scale),
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF4CAF50),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        Icons.play_arrow,
-                                        size: 16 * scale,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8 * scale),
-                                    Text(
-                                      'HOW TO PLAY',
-                                      style: TextStyle(
-                                        fontFamily: 'Programme',
-                                        fontSize: 16 * scale,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              // Play vs Friend Button
-                              _MenuButton(
-                                label: 'FRIEND',
-                                scale: scale,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => const GamePage(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              SizedBox(height: 16 * scale),
-                              // Play vs Bot Button
-                              _MenuButton(
-                                label: 'BOT',
-                                scale: scale,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          const DifficultyScreen(),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
+                    ),
+                    SizedBox(height: 6 * scale),
+                    Text(
+                      'KNIFE THROWER',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 30 * scale,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        fontFamily: 'Montserrat',
                       ),
-                      SizedBox(height: 24 * scale),
-                      // QUIT Button (Outside Card)
-                      GestureDetector(
-                        onTap: () => SystemNavigator.pop(),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(
-                            vertical: 12 * scale,
-                            horizontal: 40 * scale,
+                    ),
+                    SizedBox(height: 40 * scale),
+                    // Play Button
+                    GameButton(
+                      label: 'PLAY',
+                      mainColor: const Color(0xFF2CDFA2),
+                      accentColor: const Color(0xFF52EBB6),
+                      lipColor: const Color(0xFF1C9B71),
+                      scale: scale,
+                      fontSize: 20,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const ModeSelectionScreen(),
                           ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE57373),
-                            borderRadius: BorderRadius.circular(16 * scale),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(
-                                  0xFFC62828,
-                                ).withValues(alpha: 0.3),
-                                offset: Offset(0, 4 * scale),
-                                blurRadius: 0,
-                              ),
-                            ],
+                        );
+                      },
+                    ),
+                    SizedBox(height: 25 * scale),
+                    // Customization Button
+                    GameButton(
+                      label: 'CUSTOMIZATION',
+                      mainColor: const Color(0xFF999999),
+                      accentColor: const Color(0xFF404040),
+                      lipColor: const Color(0xFF747373),
+                      scale: scale,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => const CustomizationPage(),
                           ),
-                          child: Text(
-                            'QUIT',
-                            style: TextStyle(
-                              fontFamily: 'Programme',
-                              fontSize: 18 * scale,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
+                        );
+                      },
+                    ),
+                    const Spacer(),
+                  ],
                 ),
-              ],
+              ),
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _MenuButton extends StatelessWidget {
-  final String label;
-  final double scale;
-  final VoidCallback onTap;
-
-  const _MenuButton({
-    required this.label,
-    required this.scale,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(
-          vertical: 16 * scale,
-          horizontal: 20 * scale,
-        ),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E88E5), // Blue button
-          borderRadius: BorderRadius.circular(20 * scale),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0D47A1).withValues(alpha: 0.3),
-              offset: Offset(0, 4 * scale),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'PLAY VS.',
-              style: TextStyle(
-                fontFamily: 'Programme',
-                fontSize: 12 * scale,
-                fontWeight: FontWeight.w900,
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
-            ),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Programme',
-                fontSize: 28 * scale,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
