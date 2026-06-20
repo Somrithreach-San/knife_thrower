@@ -153,54 +153,25 @@ class _GamePageState extends State<GamePage> {
           ),
         ),
         child: Stack(
-              fit: StackFit.expand,
-              children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(painter: _NoiseOverlayPainter()),
+          fit: StackFit.expand,
+          children: [
+            RepaintBoundary(
+              child: GameWidget(
+                game: _game,
+                overlayBuilderMap: {
+                  'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
+                  'gameOver': (ctx, g) =>
+                      GameOverOverlay(game: g as KnifeThrowerGame),
+                  'countdown': (ctx, g) =>
+                      CountdownOverlay(game: g as KnifeThrowerGame),
+                },
               ),
-            ),
-            GameWidget(
-              game: _game,
-              overlayBuilderMap: {
-                'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
-                'gameOver': (ctx, g) =>
-                    GameOverOverlay(game: g as KnifeThrowerGame),
-                'countdown': (ctx, g) =>
-                    CountdownOverlay(game: g as KnifeThrowerGame),
-              },
             ),
           ],
         ),
       ),
     );
   }
-}
-
-// ─────────────────────────────────────────────
-//  NOISE OVERLAY FOR GRADIENT BANDING
-// ─────────────────────────────────────────────
-class _NoiseOverlayPainter extends CustomPainter {
-  final _rng = math.Random(
-    42,
-  ); // fixed seed = same pattern every frame, no flicker
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    // Sparse, very faint dots — just enough to break up banding
-    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
-      final dx = _rng.nextDouble() * size.width;
-      final dy = _rng.nextDouble() * size.height;
-      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
-        alpha: 0.015,
-      );
-      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────
@@ -293,9 +264,16 @@ class KnifeThrowerGame extends FlameGame
   // Audio pools for low-latency playback
   final Map<String, AudioPool> _audioPools = {};
 
-  // Scaling factors
-  double get scaleFactor =>
-      math.min(size.x / GameConfig.baseWidth, size.y / GameConfig.baseHeight);
+  // Pre-allocated Paint objects for particles (avoids GC pressure)
+  static final Paint _hitPaintRed = Paint()..color = const Color(0xFFD32F2F);
+  static final Paint _hitPaintBlue = Paint()..color = const Color(0xFF1976D2);
+  static final Paint _clashTrianglePaint = Paint()
+    ..color = const Color(0xFFADC1D6).withValues(alpha: 0.4)
+    ..style = PaintingStyle.fill;
+
+  // Cached scaling factor — updated only in onGameResize()
+  double _cachedScaleFactor = 1.0;
+  double get scaleFactor => _cachedScaleFactor;
 
   String _getFilenameFromAssetPath(String path) {
     return path.split('/').last;
@@ -446,6 +424,15 @@ class KnifeThrowerGame extends FlameGame
   }
 
   @override
+  void onGameResize(Vector2 size) {
+    super.onGameResize(size);
+    _cachedScaleFactor = math.min(
+      size.x / GameConfig.baseWidth,
+      size.y / GameConfig.baseHeight,
+    );
+  }
+
+  @override
   Color backgroundColor() => Colors.transparent;
 
   void _addPreThrownKnivesToTarget() {
@@ -488,7 +475,7 @@ class KnifeThrowerGame extends FlameGame
         localAngle: localAngle,
         radius: target.radius,
       );
-      target.add(stuckKnife);
+      target.addStuckKnife(stuckKnife);
     }
   }
 
@@ -520,9 +507,9 @@ class KnifeThrowerGame extends FlameGame
   void recordHit(int player) {
     if (player == 1) {
       p1ScoreNotifier.value++;
-      final newResults = List<int?>.from(p1ThrowResults.value);
-      newResults[p1ThrowsMade] = 1; // hit
-      p1ThrowResults.value = newResults;
+      p1ThrowResults.value[p1ThrowsMade] = 1; // hit
+      // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+      p1ThrowResults.notifyListeners();
       p1ThrowsMade++;
 
       // Check if Player 1 has won immediately after scoring
@@ -533,9 +520,9 @@ class KnifeThrowerGame extends FlameGame
       }
     } else {
       p2ScoreNotifier.value++;
-      final newResults = List<int?>.from(p2ThrowResults.value);
-      newResults[p2ThrowsMade] = 1;
-      p2ThrowResults.value = newResults;
+      p2ThrowResults.value[p2ThrowsMade] = 1;
+      // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+      p2ThrowResults.notifyListeners();
       p2ThrowsMade++;
 
       // Check if Player 2 has won immediately after scoring
@@ -558,14 +545,14 @@ class KnifeThrowerGame extends FlameGame
 
   void recordMiss(int player) {
     if (player == 1) {
-      final newResults = List<int?>.from(p1ThrowResults.value);
-      newResults[p1ThrowsMade] = 0; // miss
-      p1ThrowResults.value = newResults;
+      p1ThrowResults.value[p1ThrowsMade] = 0; // miss
+      // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+      p1ThrowResults.notifyListeners();
       p1ThrowsMade++;
     } else {
-      final newResults = List<int?>.from(p2ThrowResults.value);
-      newResults[p2ThrowsMade] = 0;
-      p2ThrowResults.value = newResults;
+      p2ThrowResults.value[p2ThrowsMade] = 0;
+      // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+      p2ThrowResults.notifyListeners();
       p2ThrowsMade++;
     }
     _checkGameOver();
@@ -621,10 +608,10 @@ class KnifeThrowerGame extends FlameGame
         ),
         onComplete: () {
           // Remove all knives from the board to clean up
-          children.whereType<Knife>().forEach((k) => k.removeFromParent());
-          target.children.whereType<StuckKnife>().forEach(
-            (k) => k.removeFromParent(),
-          );
+          for (final k in children.whereType<Knife>().toList(growable: false)) {
+            k.removeFromParent();
+          }
+          target.clearStuckKnives();
 
           // Position target off-screen to the right for sliding back in
           target.position = Vector2(
@@ -750,10 +737,10 @@ class KnifeThrowerGame extends FlameGame
       size.y / 2,
     );
 
-    target.children.whereType<StuckKnife>().toList().forEach(
-      (k) => k.removeFromParent(),
-    );
-    children.whereType<Knife>().toList().forEach((k) => k.removeFromParent());
+    target.clearStuckKnives();
+    for (final k in children.whereType<Knife>().toList(growable: false)) {
+      k.removeFromParent();
+    }
 
     target.resetBehavior();
     overlays.remove('gameOver');
@@ -764,7 +751,8 @@ class KnifeThrowerGame extends FlameGame
 
   // Particle effect for a successful hit on the target
   void triggerHitParticles(Vector2 impactPoint, Color color, int player) {
-    final scale = scaleFactor;
+    final scale = _cachedScaleFactor;
+    final hitPaint = player == 1 ? _hitPaintRed : _hitPaintBlue;
     add(
       ParticleSystemComponent(
         particle: Particle.generate(
@@ -788,7 +776,7 @@ class KnifeThrowerGame extends FlameGame
               acceleration: Vector2.zero(),
               child: CircleParticle(
                 radius: (1.8 + _rng.nextDouble() * 1.2) * scale,
-                paint: Paint()..color = color,
+                paint: hitPaint,
               ),
             );
           },
@@ -800,7 +788,7 @@ class KnifeThrowerGame extends FlameGame
   // Particle effect for a clash (knife vs stuck knife)
   void triggerClashParticles(Vector2 clashPoint, int player) {
     final brokenSprite = player == 1 ? brokenRedSprite : brokenBlueSprite;
-    final scale = scaleFactor;
+    final scale = _cachedScaleFactor;
 
     add(
       ParticleSystemComponent(
@@ -859,9 +847,7 @@ class KnifeThrowerGame extends FlameGame
                 to: rotationSpeed,
                 child: TriangleParticle(
                   radius: (5.0 + _rng.nextDouble() * 4.0) * scale,
-                  paint: Paint()
-                    ..color = const Color(0xFFADC1D6).withValues(alpha: 0.4)
-                    ..style = PaintingStyle.fill,
+                  paint: _clashTrianglePaint,
                 ),
               ),
             );
@@ -935,7 +921,9 @@ class KnifeThrowerGame extends FlameGame
 //  TARGET
 // ─────────────────────────────────────────────
 class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
-  double get radius => GameConfig.targetRadius * game.scaleFactor;
+  // Cached radius — updated only in onGameResize()
+  double _cachedRadius = GameConfig.targetRadius;
+  double get radius => _cachedRadius;
 
   double _behaviorTimer = 0.0;
   double _nextChangeInterval = 3.0;
@@ -945,12 +933,31 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
   int roundHits =
       0; // Track only player-thrown knives in current round for cracking logic
 
+  // Cached list of stuck knives — avoids whereType iteration overhead
+  final List<StuckKnife> _stuckKnives = [];
+  List<StuckKnife> get stuckKnives => _stuckKnives;
+
   Target() : super(anchor: Anchor.center);
+
+  /// Add a stuck knife and track it in the cached list
+  void addStuckKnife(StuckKnife knife) {
+    _stuckKnives.add(knife);
+    add(knife);
+  }
+
+  /// Remove all stuck knives efficiently
+  void clearStuckKnives() {
+    for (final k in _stuckKnives) {
+      k.removeFromParent();
+    }
+    _stuckKnives.clear();
+  }
 
   @override
   Future<void> onLoad() async {
+    _cachedRadius = GameConfig.targetRadius * game.scaleFactor;
     position = game.size / 2;
-    size = Vector2.all(radius * 2);
+    size = Vector2.all(_cachedRadius * 2);
 
     _visual = SpriteComponent(
       sprite: game.targetSprite,
@@ -983,6 +990,7 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     _behaviorTimer = 0.0;
     stuckKnifeCount = 0;
     roundHits = 0;
+    _stuckKnives.clear();
     _visual.sprite = game.targetSprite;
     _visual.scale = Vector2.all(1.0);
     _generateNextBehaviorInterval();
@@ -995,8 +1003,9 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
   @override
   void onGameResize(Vector2 size) {
     super.onGameResize(size);
+    _cachedRadius = GameConfig.targetRadius * game.scaleFactor;
     position = size / 2;
-    this.size = Vector2.all(radius * 2);
+    this.size = Vector2.all(_cachedRadius * 2);
     _visual.size = this.size;
     _visual.position = this.size / 2;
   }
@@ -1146,8 +1155,8 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     final worldAngle = player == 1 ? (math.pi / 2) : (-math.pi / 2);
     final impactLocalAngle = normalizeAngle(worldAngle - game.target.angle);
 
-    // Check for collision with already stuck knives
-    for (final stuck in game.target.children.whereType<StuckKnife>()) {
+    // Check for collision with already stuck knives (uses cached list)
+    for (final stuck in game.target.stuckKnives) {
       final a2 = stuck.localAngle;
       double diff = (impactLocalAngle - a2).abs();
       diff = diff % (2 * math.pi);
@@ -1201,7 +1210,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     game.triggerHitShake();
     HapticFeedback.mediumImpact(); // Trigger phone vibration
 
-    game.target.add(
+    game.target.addStuckKnife(
       StuckKnife(
         player: player,
         sprite: sprite!,
@@ -1823,11 +1832,6 @@ class _GameOverPlayerSection extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: CustomPaint(painter: _NoiseOverlayPainter()),
-                ),
-              ),
               Positioned.fill(
                 child: Opacity(
                   opacity: 0.1,

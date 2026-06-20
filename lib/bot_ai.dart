@@ -124,15 +124,13 @@ class BotController {
       worldImpactAngle - game.target.angle,
     );
 
-    for (final child in game.target.children) {
-      if (child is StuckKnife) {
-        double diff = (impactLocalAngle - child.localAngle).abs();
-        diff = diff % (2 * math.pi);
-        if (diff > math.pi) diff = 2 * math.pi - diff;
+    for (final child in game.target.stuckKnives) {
+      double diff = (impactLocalAngle - child.localAngle).abs();
+      diff = diff % (2 * math.pi);
+      if (diff > math.pi) diff = 2 * math.pi - diff;
 
-        if (diff < GameConfig.collisionAngle + extraBuffer) {
-          return false;
-        }
+      if (diff < GameConfig.collisionAngle + extraBuffer) {
+        return false;
       }
     }
     return true;

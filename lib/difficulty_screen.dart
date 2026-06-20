@@ -220,35 +220,11 @@
 // }
 
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'dart:math' as math;
 import 'main.dart';
 import 'bot_ai.dart';
 import 'mode_selection_screen.dart';
 import 'back_arrow_button.dart';
-
-class _NoiseOverlayPainter extends CustomPainter {
-  final _rng = math.Random(
-    42,
-  ); // fixed seed = same pattern every frame, no flicker
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    // Sparse, very faint dots — just enough to break up banding
-    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
-      final dx = _rng.nextDouble() * size.width;
-      final dy = _rng.nextDouble() * size.height;
-      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
-        alpha: 0.015,
-      );
-      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
-}
 
 class DifficultyScreen extends StatefulWidget {
   const DifficultyScreen({super.key});
@@ -324,11 +300,6 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(painter: _NoiseOverlayPainter()),
-                  ),
-                ),
                 SafeArea(
                   child: Stack(
                     children: [

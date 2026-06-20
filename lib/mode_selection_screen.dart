@@ -4,29 +4,6 @@ import 'main.dart'; // To access GamePage and GameConfig
 import 'difficulty_screen.dart';
 import 'back_arrow_button.dart';
 
-class _NoiseOverlayPainter extends CustomPainter {
-  final _rng = math.Random(
-    42,
-  ); // fixed seed = same pattern every frame, no flicker
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint();
-    // Sparse, very faint dots — just enough to break up banding
-    for (int i = 0; i < (size.width * size.height / 120).round(); i++) {
-      final dx = _rng.nextDouble() * size.width;
-      final dy = _rng.nextDouble() * size.height;
-      paint.color = (_rng.nextBool() ? Colors.white : Colors.black).withValues(
-        alpha: 0.015,
-      );
-      canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _NoiseOverlayPainter oldDelegate) => false;
-}
-
 enum GameButtonIcon { vsFriend, vsBot, easy, normal, hard }
 
 class GameButton extends StatefulWidget {
@@ -318,11 +295,6 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: CustomPaint(painter: _NoiseOverlayPainter()),
-                  ),
-                ),
                 SafeArea(
                   bottom: true,
                   left: true,
