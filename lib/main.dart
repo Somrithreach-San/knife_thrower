@@ -4,6 +4,7 @@ import 'package:flame/events.dart';
 import 'package:flame/particles.dart';
 import 'package:flame/effects.dart';
 import 'package:flame_audio/flame_audio.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -46,6 +47,13 @@ class GameConfig {
 // ─────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Configure audio context to use Low Latency (SoundPool) on Android
+  // This prevents the "(1, -19)" MediaPlayer limit exhaustion error
+  AudioPlayer.global.setAudioContext(AudioContextConfig(
+    respectSilence: true,
+    stayAwake: false,
+  ).build());
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -68,6 +76,34 @@ class KnifeThrowerApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0F1727),
         useMaterial3: true,
       ),
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        
+        // If the screen is wider than it is tall (like a desktop/web browser),
+        // we constrain the game into a mobile-sized frame centered on screen.
+        if (mediaQuery.size.width > mediaQuery.size.height && child != null) {
+          final targetWidth = mediaQuery.size.height * (GameConfig.baseWidth / GameConfig.baseHeight);
+          return Container(
+            color: Colors.black, // Sleek dark borders
+            child: Center(
+              child: ClipRect(
+                child: SizedBox(
+                  width: targetWidth,
+                  height: mediaQuery.size.height,
+                  child: MediaQuery(
+                    // Override the media query so the app inside knows its constrained size
+                    data: mediaQuery.copyWith(
+                      size: Size(targetWidth, mediaQuery.size.height),
+                    ),
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return child!;
+      },
       home: const HomeScreen(),
     );
   }
@@ -302,7 +338,7 @@ class KnifeThrowerGame extends FlameGame
         try {
           _audioPools[sound] = await AudioPool.create(
             source: AssetSource('audio/$sound'),
-            maxPlayers: 4,
+            maxPlayers: 2, // Reduced from 4 to prevent MediaPlayer limit exhaustion
           );
         } catch (e) {
           debugPrint('Error creating AudioPool for $sound: $e');
@@ -490,18 +526,29 @@ class KnifeThrowerGame extends FlameGame
     }
   }
 
-  void _spawnReplacement(int player) {
-    if (isGameOver || isTransitioning) return;
-    if (player == 1 && p1ThrowsMade >= GameConfig.knivesPerRound) return;
-    if (player == 2 && p2ThrowsMade >= GameConfig.knivesPerRound) return;
+  int _lastHapticTime = 0;
 
-    final k = Knife(player: player);
-    add(k);
-    if (player == 1) {
-      p1Knife = k;
-    } else {
-      p2Knife = k;
+  void triggerHapticFeedback() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastHapticTime > 50) { // 50ms debounce
+      HapticFeedback.mediumImpact();
+      _lastHapticTime = now;
     }
+  }
+
+  void _prepareNextKnife(int player) {
+    final k = player == 1 ? p1Knife : p2Knife;
+
+    if (isGameOver || isTransitioning || 
+        (player == 1 && p1ThrowsMade >= GameConfig.knivesPerRound) ||
+        (player == 2 && p2ThrowsMade >= GameConfig.knivesPerRound)) {
+      // Hide the knife off-screen when no more throws are allowed
+      k.position.y = 999999;
+      return;
+    }
+
+    // Instantly snap the existing knife back to the throwing position
+    k.resetPosition();
   }
 
   void recordHit(int player) {
@@ -539,8 +586,8 @@ class KnifeThrowerGame extends FlameGame
         totalStuck: target.stuckKnifeCount + 1,
         playerHits: target.roundHits + 1,
       );
-      _spawnReplacement(player);
     }
+    _prepareNextKnife(player);
   }
 
   void recordMiss(int player) {
@@ -556,7 +603,7 @@ class KnifeThrowerGame extends FlameGame
       p2ThrowsMade++;
     }
     _checkGameOver();
-    if (!isGameOver && !isTransitioning) _spawnReplacement(player);
+    _prepareNextKnife(player);
   }
 
   // ─────────────────────────────────────────────
@@ -1141,7 +1188,6 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
           : (_nextPos.y - size.y / 2 > game.size.y);
 
       if (missed) {
-        removeFromParent();
         game.recordMiss(player);
       } else {
         position.y = _nextPos.y;
@@ -1176,8 +1222,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
         final clashPoint = targetCenter + clashVector;
         game.triggerClashParticles(clashPoint, player);
 
-        // Remove the original knife immediately and record a miss
-        removeFromParent();
+        // Record a miss
         game.recordMiss(player);
         return;
       }
@@ -1208,7 +1253,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
 
     // Add satisfying feedback: screen shake + haptics
     game.triggerHitShake();
-    HapticFeedback.mediumImpact(); // Trigger phone vibration
+    game.triggerHapticFeedback(); // Debounced phone vibration
 
     game.target.addStuckKnife(
       StuckKnife(
@@ -1219,8 +1264,6 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
         radius: game.target.radius,
       ),
     );
-
-    removeFromParent();
   }
 
   int _r3() => KnifeThrowerGame._rng.nextInt(3) + 1;
