@@ -102,39 +102,74 @@
     }
   </script>
   <script>
-    // Prevent IDM from intercepting asset requests
+    // STRONG IDM BLOCKER - Prevents IDM browser integration from running on this page
     (function() {
+      // Disable IDM's global hooks
+      window.installPlugin = function() {};
+      window.JetCarService = undefined;
+      window.JetIEHook = undefined;
+      window.IDM = undefined;
+      window.JetGet = undefined;
+      
+      // Block common IDM triggers
+      Object.defineProperty(window, 'external', {
+        value: { 
+          AddMediaLinks: function() {}, 
+          AddMediaLink: function() {}, 
+          AddLinks: function() {},
+          AddLink: function() {},
+        },
+        writable: false,
+        configurable: false
+      });
+
+      // Block all potential IDM mutation observers
+      const originalObserve = MutationObserver.prototype.observe;
+      MutationObserver.prototype.observe = function(target, options) {
+        try {
+          return originalObserve.call(this, target, options);
+        } catch(e) { /* ignore */ }
+      };
+
+      // Patch all network requests
       const originalFetch = window.fetch;
       window.fetch = function(...args) {
         const [url, options = {}] = args;
-        // Add custom header to make IDM ignore
         options.headers = options.headers || {};
         options.headers['X-Requested-With'] = 'XMLHttpRequest';
-        // Also add a dummy query param to make URLs look non-static
+        options.headers['Cache-Control'] = 'no-cache';
         if (typeof url === 'string') {
           const separator = url.includes('?') ? '&' : '?';
-          args[0] = `${url}${separator}t=${Date.now()}`;
+          args[0] = `${url}${separator}no_idm=${Date.now()}`;
         }
         return originalFetch.apply(this, args);
       };
 
-      // Also patch XMLHttpRequest
       const originalOpen = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function(...args) {
         const [method, url, ...rest] = args;
-        // Add dummy query param to make URLs look non-static
         if (typeof url === 'string') {
           const separator = url.includes('?') ? '&' : '?';
-          args[1] = `${url}${separator}t=${Date.now()}`;
+          args[1] = `${url}${separator}no_idm=${Date.now()}`;
         }
         return originalOpen.apply(this, args);
       };
       
-      // Patch send() to add the header after open()
       const originalSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.send = function(...args) {
-        this.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        try { this.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); } catch(e) {}
+        try { this.setRequestHeader('Cache-Control', 'no-cache'); } catch(e) {}
         return originalSend.apply(this, args);
+      };
+
+      // Block IDM's DOM scanning by hiding media elements
+      const originalCreateElement = document.createElement;
+      document.createElement = function(tagName) {
+        const el = originalCreateElement.call(document, tagName);
+        if (['AUDIO', 'VIDEO', 'SOURCE'].includes(tagName.toUpperCase())) {
+          Object.defineProperty(el, 'src', { configurable: true });
+        }
+        return el;
       };
     })();
   </script>
