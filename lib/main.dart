@@ -423,11 +423,16 @@ class KnifeThrowerGame extends FlameGame
   }
 
   void playPoolSound(String sound, {double volume = 1.0}) {
-    if (_audioPools.containsKey(sound)) {
-      _audioPools[sound]?.start(volume: volume);
-    } else {
-      // Fallback for sounds not in pool or if pool initialization failed
-      FlameAudio.play(sound, volume: volume);
+    try {
+      if (_audioPools.containsKey(sound)) {
+        _audioPools[sound]?.start(volume: volume);
+      } else {
+        // Fallback for sounds not in pool or if pool initialization failed
+        FlameAudio.play(sound, volume: volume);
+      }
+    } catch (e) {
+      // Silently ignore audio errors to prevent crashes
+      debugPrint('Audio error playing $sound: $e');
     }
   }
 
