@@ -101,6 +101,43 @@
       document.body.style.background = "transparent";
     }
   </script>
+  <script>
+    // Prevent IDM from intercepting asset requests
+    (function() {
+      const originalFetch = window.fetch;
+      window.fetch = function(...args) {
+        const [url, options = {}] = args;
+        // Add custom header to make IDM ignore
+        options.headers = options.headers || {};
+        options.headers['X-Requested-With'] = 'XMLHttpRequest';
+        // Also add a dummy query param to make URLs look non-static
+        if (typeof url === 'string') {
+          const separator = url.includes('?') ? '&' : '?';
+          args[0] = `${url}${separator}t=${Date.now()}`;
+        }
+        return originalFetch.apply(this, args);
+      };
+
+      // Also patch XMLHttpRequest
+      const originalOpen = XMLHttpRequest.prototype.open;
+      XMLHttpRequest.prototype.open = function(...args) {
+        const [method, url, ...rest] = args;
+        // Add dummy query param to make URLs look non-static
+        if (typeof url === 'string') {
+          const separator = url.includes('?') ? '&' : '?';
+          args[1] = `${url}${separator}t=${Date.now()}`;
+        }
+        return originalOpen.apply(this, args);
+      };
+      
+      // Patch send() to add the header after open()
+      const originalSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.send = function(...args) {
+        this.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        return originalSend.apply(this, args);
+      };
+    })();
+  </script>
 </head>
 <body>
   
