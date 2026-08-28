@@ -14,6 +14,7 @@ import 'utils.dart';
 import 'bot_ai.dart';
 import 'customization_service.dart';
 import 'back_arrow_button.dart';
+import 'widgets/app_loading_indicator.dart';
 
 // ─────────────────────────────────────────────
 //  CONSTANTS
@@ -214,26 +215,7 @@ class _GamePageState extends State<GamePage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0A1628),
-        body: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
-            ),
-          ),
-          child: const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF2CDFA2),
-              strokeWidth: 3,
-            ),
-          ),
-        ),
-      );
+      return const AppLoadingScreen();
     }
 
     return Scaffold(
@@ -270,6 +252,7 @@ class _GamePageState extends State<GamePage> {
               RepaintBoundary(
                 child: GameWidget(
                   game: _game,
+                  loadingBuilder: (context) => const AppLoadingIndicator(),
                   overlayBuilderMap: {
                     'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
                     'gameOver': (ctx, g) =>

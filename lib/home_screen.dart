@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'mode_selection_screen.dart';
 import 'customization_page.dart';
 import 'main.dart';
+import 'widgets/app_loading_indicator.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -39,26 +40,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0A1628),
-        body: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
-            ),
-          ),
-          child: const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF2CDFA2),
-              strokeWidth: 3,
-            ),
-          ),
-        ),
-      );
+      return const AppLoadingScreen();
     }
 
     return Scaffold(

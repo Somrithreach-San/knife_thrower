@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'customization_service.dart';
 import 'back_arrow_button.dart';
+import 'widgets/app_loading_indicator.dart';
 import 'main.dart';
 
 class CustomizationPage extends StatefulWidget {
@@ -185,12 +186,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
 
                 // Main Content Anchored From Top (Toggle never jumps when switching tabs)
                 if (_isLoading)
-                  const Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF2CDFA2),
-                      strokeWidth: 3,
-                    ),
-                  )
+                  const AppLoadingIndicator()
                 else
                   Align(
                     alignment: Alignment.topCenter,
