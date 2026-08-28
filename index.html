@@ -16,26 +16,22 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="Knife Thrower - A 2-player knife throwing game">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="flutter_game">
+  <meta name="apple-mobile-web-app-title" content="Knife Thrower">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png">
 
-  <title>flutter_game</title>
+  <title>Knife Thrower</title>
   <link rel="manifest" href="manifest.json">
   
-  
   <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
-  
-  
-  
-  
+
   <style id="splash-screen-style">
     html {
       height: 100%
@@ -45,7 +41,7 @@
       margin: 0;
       min-height: 100%;
       background-color: #0F1727;
-          background-size: 100% 100%;
+      background-size: 100% 100%;
     }
 
     .center {
@@ -102,7 +98,10 @@
     }
   </script>
   <script>
-    // STRONG IDM BLOCKER - Prevents IDM browser integration from running on this page
+    // IDM Blocker - Only block IDM's global hooks without breaking browser caching.
+    // Previous version injected Cache-Control: no-cache and ?no_idm= timestamps 
+    // into ALL fetch/XHR requests, which completely disabled browser HTTP caching
+    // and forced full re-downloads on every page load (~5MB+ penalty).
     (function() {
       // Disable IDM's global hooks
       window.installPlugin = function() {};
@@ -123,59 +122,30 @@
         configurable: false
       });
 
-      // Block all potential IDM mutation observers
-      const originalObserve = MutationObserver.prototype.observe;
-      MutationObserver.prototype.observe = function(target, options) {
-        try {
-          return originalObserve.call(this, target, options);
-        } catch(e) { /* ignore */ }
-      };
-
-      // Patch all network requests
+      // Mark requests as XHR to discourage IDM interception,
+      // but do NOT add cache-busting timestamps or no-cache headers.
       const originalFetch = window.fetch;
       window.fetch = function(...args) {
         const [url, options = {}] = args;
         options.headers = options.headers || {};
         options.headers['X-Requested-With'] = 'XMLHttpRequest';
-        options.headers['Cache-Control'] = 'no-cache';
-        if (typeof url === 'string') {
-          const separator = url.includes('?') ? '&' : '?';
-          args[0] = `${url}${separator}no_idm=${Date.now()}`;
-        }
         return originalFetch.apply(this, args);
       };
 
       const originalOpen = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function(...args) {
-        const [method, url, ...rest] = args;
-        if (typeof url === 'string') {
-          const separator = url.includes('?') ? '&' : '?';
-          args[1] = `${url}${separator}no_idm=${Date.now()}`;
-        }
         return originalOpen.apply(this, args);
       };
       
       const originalSend = XMLHttpRequest.prototype.send;
       XMLHttpRequest.prototype.send = function(...args) {
         try { this.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); } catch(e) {}
-        try { this.setRequestHeader('Cache-Control', 'no-cache'); } catch(e) {}
         return originalSend.apply(this, args);
-      };
-
-      // Block IDM's DOM scanning by hiding media elements
-      const originalCreateElement = document.createElement;
-      document.createElement = function(tagName) {
-        const el = originalCreateElement.call(document, tagName);
-        if (['AUDIO', 'VIDEO', 'SOURCE'].includes(tagName.toUpperCase())) {
-          Object.defineProperty(el, 'src', { configurable: true });
-        }
-        return el;
       };
     })();
   </script>
 </head>
 <body>
-  
   
   <!--
     You can customize the "flutter_bootstrap.js" script.
