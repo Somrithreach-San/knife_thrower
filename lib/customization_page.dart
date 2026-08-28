@@ -67,7 +67,6 @@ class _CustomizationPageState extends State<CustomizationPage> {
   @override
   void initState() {
     super.initState();
-    _loadSelections();
   }
 
   @override
@@ -75,24 +74,33 @@ class _CustomizationPageState extends State<CustomizationPage> {
     super.didChangeDependencies();
     if (!_assetsPrecached) {
       _assetsPrecached = true;
-      _precacheAllAssets();
+      _loadAllData();
     }
   }
 
-  /// Precache all images in the background so tab switching and scrolling are instant
-  void _precacheAllAssets() {
-    for (final item in _knifeData) {
-      precacheImage(AssetImage(item['asset'] as String), context);
-    }
-    for (final item in _targetData) {
-      precacheImage(AssetImage(item['asset'] as String), context);
-    }
-    precacheImage(const AssetImage('assets/images/selected.png'), context);
-  }
-
-  Future<void> _loadSelections() async {
+  Future<void> _loadAllData() async {
     try {
-      final selections = await CustomizationService.loadSelections();
+      final futures = <Future>[
+        CustomizationService.loadSelections(),
+        ..._knifeData.map(
+          (item) => precacheImage(AssetImage(item['asset'] as String), context),
+        ),
+        ..._targetData.map(
+          (item) => precacheImage(AssetImage(item['asset'] as String), context),
+        ),
+        precacheImage(const AssetImage('assets/images/selected.png'), context),
+      ];
+
+      final results = await Future.wait(futures);
+      final selections =
+          results[0]
+              as ({
+                int knifeIndex,
+                String knifeAsset,
+                int targetIndex,
+                String targetAsset,
+              });
+
       if (mounted) {
         setState(() {
           _selectedKnifeIndex = selections.knifeIndex;
@@ -101,7 +109,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
         });
       }
     } catch (e) {
-      debugPrint('Error loading selections: $e');
+      debugPrint('Error loading customization data: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;

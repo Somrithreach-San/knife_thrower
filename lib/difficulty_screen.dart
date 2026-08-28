@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'dart:ui';
 import 'main.dart';
 import 'bot_ai.dart';
 import 'mode_selection_screen.dart';
@@ -16,6 +17,8 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
   int _selectedIndex = 1; // 0: Easy, 1: Normal, 2: Hard
   final FixedExtentScrollController _scrollController =
       FixedExtentScrollController(initialItem: 1);
+  bool _isLoading = true;
+  bool _assetsPrecached = false;
 
   final List<DifficultyData> _difficulties = [
     DifficultyData(
@@ -42,6 +45,31 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
   ];
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_assetsPrecached) {
+      _assetsPrecached = true;
+      _loadAssets();
+    }
+  }
+
+  Future<void> _loadAssets() async {
+    try {
+      await Future.wait([
+        precacheImage(const AssetImage('assets/images/easy_mode.png'), context),
+        precacheImage(
+          const AssetImage('assets/images/normal_mode.png'),
+          context,
+        ),
+        precacheImage(const AssetImage('assets/images/hard_mode.png'), context),
+      ]);
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
@@ -49,6 +77,29 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A1628),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              color: Color(0xFF2CDFA2),
+              strokeWidth: 3,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1628),
       body: LayoutBuilder(
@@ -65,6 +116,7 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                 );
 
           final currentDifficulty = _difficulties[_selectedIndex];
+          final itemExtent = 85.0 * scale;
 
           return Container(
             width: double.infinity,
@@ -142,88 +194,136 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                                     ),
                                   ),
                                 ),
-                                ListWheelScrollView.useDelegate(
-                                  itemExtent: 85 * scale,
-                                  diameterRatio: 100.0,
-                                  perspective: 0.0000001,
-                                  physics: const FixedExtentScrollPhysics(),
-                                  controller: _scrollController,
-                                  onSelectedItemChanged: (int index) {
-                                    setState(() {
-                                      _selectedIndex = index;
-                                    });
-                                  },
-                                  childDelegate: ListWheelChildListDelegate(
-                                    children: List<Widget>.generate(
-                                      _difficulties.length,
-                                      (int index) {
-                                        final difficulty = _difficulties[index];
-                                        final bool isSelected =
-                                            index == _selectedIndex;
-                                        return Center(
-                                          child: AnimatedOpacity(
-                                            duration: const Duration(
-                                              milliseconds: 200,
-                                            ),
-                                            opacity: isSelected ? 1.0 : 0.35,
-                                            child: AnimatedScale(
-                                              duration: const Duration(
-                                                milliseconds: 200,
-                                              ),
-                                              scale: isSelected ? 1.0 : 0.9,
-                                              child: SizedBox(
-                                                width: 230 * scale,
-                                                height: 64 * scale,
-                                                child: ColorFiltered(
-                                                  colorFilter: isSelected
-                                                      ? const ColorFilter.mode(
-                                                          Colors.transparent,
-                                                          BlendMode.multiply,
-                                                        )
-                                                      : ColorFilter.mode(
-                                                          Colors.black
-                                                              .withValues(
-                                                                alpha: 0.45,
-                                                              ),
-                                                          BlendMode.srcATop,
-                                                        ),
-                                                  child: GameButton(
-                                                    label: difficulty.label,
-                                                    mainColor:
-                                                        difficulty.mainColor,
-                                                    accentColor:
-                                                        difficulty.accentColor,
-                                                    lipColor:
-                                                        difficulty.lipColor,
-                                                    icon: [
-                                                      GameButtonIcon.easy,
-                                                      GameButtonIcon.normal,
-                                                      GameButtonIcon.hard,
-                                                    ][index],
-                                                    scale: scale,
-                                                    onTap: () {
-                                                      setState(() {
-                                                        _selectedIndex = index;
-                                                        _scrollController
-                                                            .animateToItem(
-                                                              index,
-                                                              duration:
-                                                                  const Duration(
-                                                                    milliseconds:
-                                                                        250,
+                                // Mouse Drag & Touch Enabled Scroll Configuration
+                                ScrollConfiguration(
+                                  behavior: ScrollConfiguration.of(context)
+                                      .copyWith(
+                                        dragDevices: {
+                                          PointerDeviceKind.touch,
+                                          PointerDeviceKind.mouse,
+                                          PointerDeviceKind.trackpad,
+                                          PointerDeviceKind.stylus,
+                                        },
+                                      ),
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onVerticalDragUpdate: (details) {
+                                      if (_scrollController.hasClients) {
+                                        final newOffset =
+                                            _scrollController.offset -
+                                            details.primaryDelta!;
+                                        _scrollController.jumpTo(newOffset);
+                                      }
+                                    },
+                                    onVerticalDragEnd: (details) {
+                                      if (_scrollController.hasClients) {
+                                        final targetIndex =
+                                            (_scrollController.offset /
+                                                    itemExtent)
+                                                .round()
+                                                .clamp(
+                                                  0,
+                                                  _difficulties.length - 1,
+                                                );
+                                        _scrollController.animateToItem(
+                                          targetIndex,
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                        );
+                                      }
+                                    },
+                                    child: ListWheelScrollView.useDelegate(
+                                      itemExtent: itemExtent,
+                                      diameterRatio: 100.0,
+                                      perspective: 0.0000001,
+                                      physics: const FixedExtentScrollPhysics(),
+                                      controller: _scrollController,
+                                      onSelectedItemChanged: (int index) {
+                                        setState(() {
+                                          _selectedIndex = index;
+                                        });
+                                      },
+                                      childDelegate: ListWheelChildListDelegate(
+                                        children: List<Widget>.generate(
+                                          _difficulties.length,
+                                          (int index) {
+                                            final difficulty =
+                                                _difficulties[index];
+                                            final bool isSelected =
+                                                index == _selectedIndex;
+                                            return Center(
+                                              child: AnimatedOpacity(
+                                                duration: const Duration(
+                                                  milliseconds: 200,
+                                                ),
+                                                opacity: isSelected
+                                                    ? 1.0
+                                                    : 0.35,
+                                                child: AnimatedScale(
+                                                  duration: const Duration(
+                                                    milliseconds: 200,
+                                                  ),
+                                                  scale: isSelected ? 1.0 : 0.9,
+                                                  child: SizedBox(
+                                                    width: 230 * scale,
+                                                    height: 64 * scale,
+                                                    child: ColorFiltered(
+                                                      colorFilter: isSelected
+                                                          ? const ColorFilter.mode(
+                                                              Colors
+                                                                  .transparent,
+                                                              BlendMode
+                                                                  .multiply,
+                                                            )
+                                                          : ColorFilter.mode(
+                                                              Colors.black
+                                                                  .withValues(
+                                                                    alpha: 0.45,
                                                                   ),
-                                                              curve: Curves
-                                                                  .easeInOut,
-                                                            );
-                                                      });
-                                                    },
+                                                              BlendMode.srcATop,
+                                                            ),
+                                                      child: GameButton(
+                                                        label: difficulty.label,
+                                                        mainColor: difficulty
+                                                            .mainColor,
+                                                        accentColor: difficulty
+                                                            .accentColor,
+                                                        lipColor:
+                                                            difficulty.lipColor,
+                                                        icon: [
+                                                          GameButtonIcon.easy,
+                                                          GameButtonIcon.normal,
+                                                          GameButtonIcon.hard,
+                                                        ][index],
+                                                        scale: scale,
+                                                        onTap: () {
+                                                          setState(() {
+                                                            _selectedIndex =
+                                                                index;
+                                                            _scrollController
+                                                                .animateToItem(
+                                                                  index,
+                                                                  duration:
+                                                                      const Duration(
+                                                                        milliseconds:
+                                                                            250,
+                                                                      ),
+                                                                  curve: Curves
+                                                                      .easeInOut,
+                                                                );
+                                                          });
+                                                        },
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                          ),
-                                        );
-                                      },
+                                            );
+                                          },
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),

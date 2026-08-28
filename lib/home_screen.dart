@@ -12,6 +12,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  bool _isLoading = true;
   bool _assetsPrecached = false;
 
   @override
@@ -19,15 +20,47 @@ class _HomeScreenState extends State<HomeScreen> {
     super.didChangeDependencies();
     if (!_assetsPrecached) {
       _assetsPrecached = true;
-      precacheImage(
+      _loadAssets();
+    }
+  }
+
+  Future<void> _loadAssets() async {
+    try {
+      await precacheImage(
         const AssetImage('assets/images/Home_page_logo.png'),
         context,
       );
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A1628),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              color: Color(0xFF2CDFA2),
+              strokeWidth: 3,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1628),
       body: LayoutBuilder(
