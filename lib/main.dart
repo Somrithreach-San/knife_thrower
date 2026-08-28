@@ -178,7 +178,21 @@ class _GamePageState extends State<GamePage> {
 
   Future<void> _loadGame() async {
     try {
-      final selections = await CustomizationService.loadSelections();
+      final futures = await Future.wait([
+        CustomizationService.loadSelections(),
+        precacheImage(
+          const AssetImage('assets/images/Tap_the_screen.gif'),
+          context,
+        ),
+      ]);
+      final selections =
+          futures[0]
+              as ({
+                int knifeIndex,
+                String knifeAsset,
+                int targetIndex,
+                String targetAsset,
+              });
       debugPrint(
         'Game loading with knife index: ${selections.knifeIndex}, knife: ${selections.knifeAsset}, target: ${selections.targetAsset}',
       );
@@ -354,6 +368,8 @@ class KnifeThrowerGame extends FlameGame
   BotController? botController;
 
   final ValueNotifier<String> winnerNotifier = ValueNotifier('');
+  double _idleTime = 0.0;
+  final ValueNotifier<bool> showTapHelperNotifier = ValueNotifier(false);
 
   final Map<int, Vector2> _activeDragStart = {};
 
@@ -801,6 +817,11 @@ class KnifeThrowerGame extends FlameGame
   }
 
   void handleInput(int player) {
+    _idleTime = 0.0;
+    if (showTapHelperNotifier.value) {
+      showTapHelperNotifier.value = false;
+    }
+
     if (isGameOver) {
       restartGame();
       return;
@@ -828,6 +849,10 @@ class KnifeThrowerGame extends FlameGame
   void restartGame() {
     isGameOver = false;
     isTransitioning = false;
+    _idleTime = 0.0;
+    if (showTapHelperNotifier.value) {
+      showTapHelperNotifier.value = false;
+    }
     currentRound = 1;
     p1ScoreNotifier.value = 0;
     p2ScoreNotifier.value = 0;
@@ -994,10 +1019,27 @@ class KnifeThrowerGame extends FlameGame
 
     // Bot AI Logic
     botController?.update(dt);
+
+    // Track user idle time for "Tap the screen" hand gesture GIF helper (>10s)
+    if (!isGameOver && !isTransitioning && !isCountingDown) {
+      _idleTime += dt;
+      if (_idleTime >= 10.0 && !showTapHelperNotifier.value) {
+        showTapHelperNotifier.value = true;
+      }
+    } else {
+      _idleTime = 0.0;
+      if (showTapHelperNotifier.value) {
+        showTapHelperNotifier.value = false;
+      }
+    }
   }
 
   void gameOver() {
     isGameOver = true;
+    _idleTime = 0.0;
+    if (showTapHelperNotifier.value) {
+      showTapHelperNotifier.value = false;
+    }
 
     final p1Score = p1ScoreNotifier.value;
     final p2Score = p2ScoreNotifier.value;
@@ -1020,6 +1062,7 @@ class KnifeThrowerGame extends FlameGame
     p1ThrowResults.dispose();
     p2ThrowResults.dispose();
     winnerNotifier.dispose();
+    showTapHelperNotifier.dispose();
     super.onRemove();
   }
 }
@@ -1550,6 +1593,60 @@ class HudOverlay extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: const HoldToExitButton(),
               ),
+            ),
+
+            // Tap the screen helper animation when idle for > 10s
+            ValueListenableBuilder<bool>(
+              valueListenable: game.showTapHelperNotifier,
+              builder: (context, showHelper, _) {
+                if (!showHelper) return const SizedBox.shrink();
+                return IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: 110 * scale),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            'assets/images/Tap_the_screen.gif',
+                            width: 80 * scale,
+                            height: 80 * scale,
+                            fit: BoxFit.contain,
+                          ),
+                          SizedBox(height: 6 * scale),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10 * scale,
+                              vertical: 4 * scale,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(8 * scale),
+                              border: Border.all(
+                                color: const Color(
+                                  0xFF2CDFA2,
+                                ).withValues(alpha: 0.5),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Text(
+                              'TAP TO THROW',
+                              style: TextStyle(
+                                fontFamily: 'Montserrat',
+                                fontSize: 11 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF2CDFA2),
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         );

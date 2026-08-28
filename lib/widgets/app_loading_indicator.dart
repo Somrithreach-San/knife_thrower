@@ -13,11 +13,7 @@ class AppLoadingIndicator extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFF0D1D36),
-            Color(0xFF0B172A),
-            Color(0xFF091222),
-          ],
+          colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
         ),
       ),
       child: const Center(
@@ -46,4 +42,3 @@ class AppLoadingScreen extends StatelessWidget {
     );
   }
 }
-
