@@ -131,14 +131,6 @@ class KnifeThrowerApp extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      'Please rotate your phone upright to play',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontFamily: 'Montserrat',
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -167,7 +159,7 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> {
-  late final KnifeThrowerGame _game;
+  KnifeThrowerGame? _game;
   bool _isLoading = true;
 
   @override
@@ -176,51 +168,67 @@ class _GamePageState extends State<GamePage> {
     _loadGame();
   }
 
+  @override
+  void dispose() {
+    _game?.isReadyNotifier.removeListener(_onGameReady);
+    super.dispose();
+  }
+
+  void _onGameReady() {
+    if (_game != null && _game!.isReadyNotifier.value && mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+      // Start 3-2-1 countdown after all assets and HUD elements are 100% visible on screen
+      _game!.startCountdown();
+    }
+  }
+
   Future<void> _loadGame() async {
     try {
-      final futures = await Future.wait([
-        CustomizationService.loadSelections(),
+      final selections = await CustomizationService.loadSelections();
+      if (!mounted) return;
+      await Future.wait([
         precacheImage(
           const AssetImage('assets/images/Tap_the_screen.gif'),
           context,
         ),
+        precacheImage(AssetImage(selections.knifeAsset), context),
+        precacheImage(
+          AssetImage(CustomizationService.getBlueKnife(selections.knifeAsset)),
+          context,
+        ),
+        precacheImage(AssetImage(selections.targetAsset), context),
       ]);
-      final selections =
-          futures[0]
-              as ({
-                int knifeIndex,
-                String knifeAsset,
-                int targetIndex,
-                String targetAsset,
-              });
       debugPrint(
         'Game loading with knife index: ${selections.knifeIndex}, knife: ${selections.knifeAsset}, target: ${selections.targetAsset}',
       );
       if (mounted) {
+        final game = KnifeThrowerGame(
+          isBotMode: widget.isBotMode,
+          botDifficulty: widget.botDifficulty,
+          selectedKnifeAsset: selections.knifeAsset,
+          selectedTargetAsset: selections.targetAsset,
+          selectedKnifeIndex: selections.knifeIndex,
+        );
+        game.isReadyNotifier.addListener(_onGameReady);
         setState(() {
-          _game = KnifeThrowerGame(
-            isBotMode: widget.isBotMode,
-            botDifficulty: widget.botDifficulty,
-            selectedKnifeAsset: selections.knifeAsset,
-            selectedTargetAsset: selections.targetAsset,
-            selectedKnifeIndex: selections.knifeIndex,
-          );
-          _isLoading = false;
+          _game = game;
         });
       }
     } catch (e) {
       debugPrint('Error loading game: $e');
       if (mounted) {
+        final game = KnifeThrowerGame(
+          isBotMode: widget.isBotMode,
+          botDifficulty: widget.botDifficulty,
+          selectedKnifeAsset: CustomizationService.knives[0],
+          selectedTargetAsset: CustomizationService.targets[0],
+          selectedKnifeIndex: 0,
+        );
+        game.isReadyNotifier.addListener(_onGameReady);
         setState(() {
-          _isLoading = false;
-          // Fallback to default assets
-          _game = KnifeThrowerGame(
-            isBotMode: widget.isBotMode,
-            botDifficulty: widget.botDifficulty,
-            selectedKnifeAsset: CustomizationService.knives[0],
-            selectedTargetAsset: CustomizationService.targets[0],
-            selectedKnifeIndex: 0,
-          );
+          _game = game;
         });
       }
     }
@@ -228,7 +236,7 @@ class _GamePageState extends State<GamePage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_game == null) {
       return const AppLoadingScreen();
     }
 
@@ -242,11 +250,11 @@ class _GamePageState extends State<GamePage> {
             if (key == LogicalKeyboardKey.space ||
                 key == LogicalKeyboardKey.arrowDown ||
                 key == LogicalKeyboardKey.keyS) {
-              _game.handleInput(1);
+              _game?.handleInput(1);
               return KeyEventResult.handled;
             } else if (key == LogicalKeyboardKey.arrowUp ||
                 key == LogicalKeyboardKey.keyW) {
-              _game.handleInput(2);
+              _game?.handleInput(2);
               return KeyEventResult.handled;
             }
           }
@@ -265,8 +273,9 @@ class _GamePageState extends State<GamePage> {
             children: [
               RepaintBoundary(
                 child: GameWidget(
-                  game: _game,
+                  game: _game!,
                   loadingBuilder: (context) => const AppLoadingIndicator(),
+                  initialActiveOverlays: const ['hud'],
                   overlayBuilderMap: {
                     'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
                     'gameOver': (ctx, g) =>
@@ -276,6 +285,9 @@ class _GamePageState extends State<GamePage> {
                   },
                 ),
               ),
+              // Unified loading screen stays on top until all assets, HUD, and audio are ready
+              if (_isLoading)
+                const Positioned.fill(child: AppLoadingIndicator()),
             ],
           ),
         ),
@@ -369,7 +381,9 @@ class KnifeThrowerGame extends FlameGame
 
   final ValueNotifier<String> winnerNotifier = ValueNotifier('');
   double _idleTime = 0.0;
+  bool _hasShownTapHelperThisGame = false;
   final ValueNotifier<bool> showTapHelperNotifier = ValueNotifier(false);
+  final ValueNotifier<bool> isReadyNotifier = ValueNotifier(false);
 
   final Map<int, Vector2> _activeDragStart = {};
 
@@ -491,11 +505,11 @@ class KnifeThrowerGame extends FlameGame
       botController = BotController(this, difficulty: botDifficulty);
     }
 
-    // Add initial pre-thrown knives and start game
+    // Add initial pre-thrown knives and prepare game
     _addPreThrownKnivesToTarget();
     _spawnInitialKnives();
     overlays.add('hud');
-    startCountdown();
+    isReadyNotifier.value = true;
   }
 
   Future<void> startCountdown() async {
@@ -817,9 +831,13 @@ class KnifeThrowerGame extends FlameGame
   }
 
   void handleInput(int player) {
-    _idleTime = 0.0;
-    if (showTapHelperNotifier.value) {
-      showTapHelperNotifier.value = false;
+    // Only human input should reset the idle timer (ignore automated bot actions)
+    final bool isHumanInput = (player == 1) || (!isBotMode && player == 2);
+    if (isHumanInput) {
+      _idleTime = 0.0;
+      if (showTapHelperNotifier.value) {
+        showTapHelperNotifier.value = false;
+      }
     }
 
     if (isGameOver) {
@@ -849,6 +867,7 @@ class KnifeThrowerGame extends FlameGame
   void restartGame() {
     isGameOver = false;
     isTransitioning = false;
+    _hasShownTapHelperThisGame = false;
     _idleTime = 0.0;
     if (showTapHelperNotifier.value) {
       showTapHelperNotifier.value = false;
@@ -1021,15 +1040,28 @@ class KnifeThrowerGame extends FlameGame
     botController?.update(dt);
 
     // Track user idle time for "Tap the screen" hand gesture GIF helper (>10s)
-    if (!isGameOver && !isTransitioning && !isCountingDown) {
+    // Only show once per game unless a new game is restarted
+    final bool canHumanThrow = isBotMode
+        ? (p1ThrowsMade < GameConfig.knivesPerRound)
+        : (p1ThrowsMade < GameConfig.knivesPerRound ||
+              p2ThrowsMade < GameConfig.knivesPerRound);
+
+    if (!_hasShownTapHelperThisGame &&
+        canHumanThrow &&
+        !isGameOver &&
+        !isTransitioning &&
+        !isCountingDown) {
       _idleTime += dt;
       if (_idleTime >= 10.0 && !showTapHelperNotifier.value) {
         showTapHelperNotifier.value = true;
+        _hasShownTapHelperThisGame = true;
       }
     } else {
-      _idleTime = 0.0;
-      if (showTapHelperNotifier.value) {
-        showTapHelperNotifier.value = false;
+      if (!canHumanThrow || isGameOver || isTransitioning || isCountingDown) {
+        _idleTime = 0.0;
+        if (showTapHelperNotifier.value) {
+          showTapHelperNotifier.value = false;
+        }
       }
     }
   }
@@ -1063,6 +1095,7 @@ class KnifeThrowerGame extends FlameGame
     p2ThrowResults.dispose();
     winnerNotifier.dispose();
     showTapHelperNotifier.dispose();
+    isReadyNotifier.dispose();
     super.onRemove();
   }
 }
@@ -1390,25 +1423,28 @@ class CountdownOverlay extends StatelessWidget {
     return ValueListenableBuilder<int>(
       valueListenable: game.countdownNotifier,
       builder: (context, count, _) {
+        if (count <= 0) return const SizedBox.shrink();
         final text = '$count';
 
-        return Container(
-          color: Colors.black.withValues(alpha: 0.5), // Soft dark overlay
-          child: Center(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 120 * scale,
-                fontWeight: FontWeight.w900,
-                fontFamily: 'Montserrat',
-                shadows: const [
-                  Shadow(
-                    color: Colors.black45,
-                    blurRadius: 15,
-                    offset: Offset(0, 4),
-                  ),
-                ],
+        return IgnorePointer(
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.35), // Soft dark overlay
+            child: Center(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 120 * scale,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Montserrat',
+                  shadows: const [
+                    Shadow(
+                      color: Colors.black45,
+                      blurRadius: 15,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1443,212 +1479,207 @@ class HudOverlay extends StatelessWidget {
                 screenHeight / GameConfig.baseHeight,
               );
 
-        return Stack(
-          children: [
-            // Blue player (top) dots
-            if (isWidescreen)
-              Positioned(
-                right: 48 * scale,
-                top: 36 * scale,
-                child: SafeArea(
-                  child: _DotIndicator(
-                    notifier: game.p2ThrowResults,
-                    baseColor: Colors.blueAccent,
-                    isRow: true,
-                    scale: scale,
-                  ),
-                ),
-              )
-            else
-              Positioned(
-                right: 20 * scale,
-                top: 0,
-                bottom: screenHeight / 2,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 20 * scale),
+        return SizedBox(
+          width: screenWidth,
+          height: screenHeight,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Blue player (top) dots
+              if (isWidescreen)
+                Positioned(
+                  right: 48 * scale,
+                  top: 36 * scale,
+                  child: SafeArea(
                     child: _DotIndicator(
                       notifier: game.p2ThrowResults,
                       baseColor: Colors.blueAccent,
-                      isRow: false,
+                      isRow: true,
                       scale: scale,
                     ),
                   ),
-                ),
-              ),
-
-            // Red player (bottom) dots
-            if (isWidescreen)
-              Positioned(
-                left: 48 * scale,
-                bottom: 36 * scale,
-                child: SafeArea(
-                  child: _DotIndicator(
-                    notifier: game.p1ThrowResults,
-                    baseColor: Colors.redAccent,
-                    isRow: true,
-                    scale: scale,
-                  ),
-                ),
-              )
-            else
-              Positioned(
-                left: 20 * scale,
-                top: screenHeight / 2,
-                bottom: 0,
-                child: SafeArea(
-                  top: false,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
+                )
+              else
+                Positioned(
+                  right: 20 * scale,
+                  top: 0,
+                  bottom: screenHeight / 2,
+                  child: SafeArea(
+                    bottom: false,
                     child: Padding(
-                      padding: EdgeInsets.only(bottom: 20 * scale),
+                      padding: EdgeInsets.only(top: 20 * scale),
                       child: _DotIndicator(
-                        notifier: game.p1ThrowResults,
-                        baseColor: Colors.redAccent,
+                        notifier: game.p2ThrowResults,
+                        baseColor: Colors.blueAccent,
                         isRow: false,
                         scale: scale,
                       ),
                     ),
                   ),
                 ),
-              ),
 
-            // Score display (always on left edge)
-            Positioned(
-              left: -40 * scale,
-              top: (screenHeight - 120 * scale) / 2,
-              child: Transform.scale(
-                scale: scale,
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  width: 80,
-                  height: 120,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topRight: Radius.circular(60),
-                      bottomRight: Radius.circular(60),
+              // Red player (bottom) dots
+              if (isWidescreen)
+                Positioned(
+                  left: 48 * scale,
+                  bottom: 36 * scale,
+                  child: SafeArea(
+                    child: _DotIndicator(
+                      notifier: game.p1ThrowResults,
+                      baseColor: Colors.redAccent,
+                      isRow: true,
+                      scale: scale,
                     ),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 40),
-                    child: Center(
-                      child: RotatedBox(
-                        quarterTurns: 3,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ValueListenableBuilder<int>(
-                              valueListenable: game.p1ScoreNotifier,
-                              builder: (_, v, _) => Text(
-                                '$v',
-                                style: const TextStyle(
-                                  fontFamily: 'Montserrat',
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.redAccent,
+                )
+              else
+                Positioned(
+                  left: 20 * scale,
+                  top: screenHeight / 2,
+                  bottom: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: 20 * scale),
+                        child: _DotIndicator(
+                          notifier: game.p1ThrowResults,
+                          baseColor: Colors.redAccent,
+                          isRow: false,
+                          scale: scale,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Score display (always on left edge)
+              Positioned(
+                left: -40 * scale,
+                top: (screenHeight - 120 * scale) / 2,
+                child: Transform.scale(
+                  scale: scale,
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    width: 80,
+                    height: 120,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topRight: Radius.circular(60),
+                        bottomRight: Radius.circular(60),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 40),
+                      child: Center(
+                        child: RotatedBox(
+                          quarterTurns: 3,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ValueListenableBuilder<int>(
+                                valueListenable: game.p1ScoreNotifier,
+                                builder: (_, v, _) => Text(
+                                  '$v',
+                                  style: const TextStyle(
+                                    fontFamily: 'Montserrat',
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.redAccent,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 4),
-                              child: Text(
-                                '.',
-                                style: TextStyle(
-                                  fontFamily: 'Montserrat',
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.black54,
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 4),
+                                child: Text(
+                                  '.',
+                                  style: TextStyle(
+                                    fontFamily: 'Montserrat',
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ),
-                            ),
-                            ValueListenableBuilder<int>(
-                              valueListenable: game.p2ScoreNotifier,
-                              builder: (_, v, _) => Text(
-                                '$v',
-                                style: const TextStyle(
-                                  fontFamily: 'Montserrat',
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.blueAccent,
+                              ValueListenableBuilder<int>(
+                                valueListenable: game.p2ScoreNotifier,
+                                builder: (_, v, _) => Text(
+                                  '$v',
+                                  style: const TextStyle(
+                                    fontFamily: 'Montserrat',
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.blueAccent,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
 
-            // Exit button (always on right edge)
-            Positioned(
-              right: -40 * scale,
-              top: (screenHeight - 120 * scale) / 2,
-              child: Transform.scale(
-                scale: scale,
-                alignment: Alignment.centerRight,
-                child: const HoldToExitButton(),
+              // Exit button (always on right edge)
+              Positioned(
+                right: -40 * scale,
+                top: (screenHeight - 120 * scale) / 2,
+                child: Transform.scale(
+                  scale: scale,
+                  alignment: Alignment.centerRight,
+                  child: const HoldToExitButton(),
+                ),
               ),
-            ),
 
-            // Tap the screen helper animation when idle for > 10s
-            ValueListenableBuilder<bool>(
-              valueListenable: game.showTapHelperNotifier,
-              builder: (context, showHelper, _) {
-                if (!showHelper) return const SizedBox.shrink();
-                return IgnorePointer(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: EdgeInsets.only(bottom: 110 * scale),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset(
+              // Tap the screen helper animation when idle for > 10s
+              ValueListenableBuilder<bool>(
+                valueListenable: game.showTapHelperNotifier,
+                builder: (context, showHelper, _) {
+                  if (!showHelper) return const SizedBox.shrink();
+                  final gifSize = 140.0 * scale;
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Player 1 (Bottom / Red) Tap Helper
+                      Positioned(
+                        left: (screenWidth / 2) + 20 * scale,
+                        bottom: 45 * scale,
+                        child: IgnorePointer(
+                          child: Image.asset(
                             'assets/images/Tap_the_screen.gif',
-                            width: 80 * scale,
-                            height: 80 * scale,
+                            width: gifSize,
+                            height: gifSize,
                             fit: BoxFit.contain,
                           ),
-                          SizedBox(height: 6 * scale),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 10 * scale,
-                              vertical: 4 * scale,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(8 * scale),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFF2CDFA2,
-                                ).withValues(alpha: 0.5),
-                                width: 1.0,
-                              ),
-                            ),
-                            child: Text(
-                              'TAP TO THROW',
-                              style: TextStyle(
-                                fontFamily: 'Montserrat',
-                                fontSize: 11 * scale,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF2CDFA2),
-                                letterSpacing: 1.1,
+                        ),
+                      ),
+                      // Player 2 (Top / Blue) Tap Helper in VS. FRIEND mode
+                      if (!game.isBotMode)
+                        Positioned(
+                          right: (screenWidth / 2) + 20 * scale,
+                          top: 45 * scale,
+                          child: IgnorePointer(
+                            child: RotatedBox(
+                              quarterTurns: 2,
+                              child: Image.asset(
+                                'assets/images/Tap_the_screen.gif',
+                                width: gifSize,
+                                height: gifSize,
+                                fit: BoxFit.contain,
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
         );
       },
     );
