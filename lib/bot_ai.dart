@@ -80,7 +80,10 @@ class BotController {
     }
 
     // Dynamic safety reduction: as we wait longer, we become less picky about the gap
-    final safetyReduction = (_botWaitingTimer / _maxWaitBeforeRisk).clamp(0.0, 1.0);
+    final safetyReduction = (_botWaitingTimer / _maxWaitBeforeRisk).clamp(
+      0.0,
+      1.0,
+    );
     final effectiveSafetyBuffer = _safetyBuffer * (1.0 - safetyReduction);
 
     final bool safe = _checkBotSafety(extraBuffer: effectiveSafetyBuffer);

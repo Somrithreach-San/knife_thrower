@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'customization_service.dart';
+import 'back_arrow_button.dart';
+import 'main.dart';
 
 class CustomizationPage extends StatefulWidget {
   const CustomizationPage({super.key});
@@ -13,6 +16,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
   int _selectedKnifeIndex = 0;
   int _selectedTargetIndex = 0;
   bool _isLoading = true;
+  bool _assetsPrecached = false;
 
   final List<Map<String, dynamic>> _knifeData = [
     {
@@ -66,14 +70,33 @@ class _CustomizationPageState extends State<CustomizationPage> {
     _loadSelections();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_assetsPrecached) {
+      _assetsPrecached = true;
+      _precacheAllAssets();
+    }
+  }
+
+  /// Precache all images in the background so tab switching and scrolling are instant
+  void _precacheAllAssets() {
+    for (final item in _knifeData) {
+      precacheImage(AssetImage(item['asset'] as String), context);
+    }
+    for (final item in _targetData) {
+      precacheImage(AssetImage(item['asset'] as String), context);
+    }
+    precacheImage(const AssetImage('assets/images/selected.png'), context);
+  }
+
   Future<void> _loadSelections() async {
     try {
-      final knifeIndex = await CustomizationService.getSelectedKnifeIndex();
-      final targetIndex = await CustomizationService.getSelectedTargetIndex();
+      final selections = await CustomizationService.loadSelections();
       if (mounted) {
         setState(() {
-          _selectedKnifeIndex = knifeIndex;
-          _selectedTargetIndex = targetIndex;
+          _selectedKnifeIndex = selections.knifeIndex;
+          _selectedTargetIndex = selections.targetIndex;
           _isLoading = false;
         });
       }
@@ -107,114 +130,151 @@ class _CustomizationPageState extends State<CustomizationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final statusBarH = MediaQuery.of(context).padding.top;
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Back arrow at exact Figma position
-            Positioned(
-              left: 35,
-              top: statusBarH + 20,
-              child: _buildBackArrow(),
-            ),
-            // Toggle
-            Positioned(
-              top: statusBarH + 80,
-              left: 0,
-              right: 0,
-              child: _buildToggle(),
-            ),
-            // Grid
-            Positioned(
-              top: statusBarH + 181,
-              left: 52,
-              right: 52,
-              bottom: 0,
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    )
-                  : _buildGrid(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+      backgroundColor: const Color(0xFF0A1628),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final screenWidth = constraints.maxWidth;
+          final screenHeight = constraints.maxHeight;
+          final bool isDesktop = screenWidth >= 768 && screenHeight >= 500;
+          final scale = isDesktop
+              ? math.min(1.0, screenHeight / 850.0)
+              : math.min(
+                  screenWidth / GameConfig.baseWidth,
+                  screenHeight / GameConfig.baseHeight,
+                );
 
-  Widget _buildBackArrow() {
-    return GestureDetector(
-      onTap: () => Navigator.pop(context),
-      child: Container(
-        width: 40,
-        height: 40,
-        color: Colors.transparent,
-        child: const Icon(
-          Icons.arrow_back_ios_new,
-          color: Colors.white,
-          size: 22,
-        ),
-      ),
-    );
-  }
+          final gridWidth = 300.0 * scale;
+          final topPadding = isDesktop ? 60.0 * scale : 70.0 * scale;
 
-  Widget _buildToggle() {
-    return Center(
-      child: Container(
-        width: 290,
-        height: 60,
-        decoration: BoxDecoration(
-          color: const Color(0xFF999999),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0xFF747474),
-              offset: Offset(0, 4),
-              blurRadius: 0,
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              left: _selectedTab == 'knife' ? 6 : 147,
-              top: 5,
-              width: 137,
-              height: 50,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF404040).withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(6),
-                ),
+          return Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF0D1D36),
+                  Color(0xFF0B172A),
+                  Color(0xFF091222),
+                ],
               ),
             ),
-            Row(
+            child: Stack(
               children: [
-                Expanded(
+                // Top-Left Back Arrow
+                Positioned(
+                  left: 24,
+                  top: 24,
+                  child: SafeArea(
+                    child: BackArrowButton(
+                      onTap: () => Navigator.pop(context),
+                      scale: scale,
+                    ),
+                  ),
+                ),
+
+                // Main Content Anchored From Top (Toggle never jumps when switching tabs)
+                if (_isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF2CDFA2),
+                      strokeWidth: 3,
+                    ),
+                  )
+                else
+                  Align(
+                    alignment: Alignment.topCenter,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: topPadding),
+                        child: SizedBox(
+                          width: gridWidth,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Fixed Top Toggle
+                              _buildToggle(scale),
+                              SizedBox(height: 24 * scale),
+
+                              // Grid Content (Scrollable if needed on small screens)
+                              Flexible(
+                                child: SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  child: _buildGrid(scale),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildToggle(double scale) {
+    final toggleWidth = 280.0 * scale;
+    final toggleHeight = 56.0 * scale;
+    final pillWidth = (toggleWidth - 12 * scale) / 2;
+
+    return Container(
+      width: toggleWidth,
+      height: toggleHeight,
+      decoration: BoxDecoration(
+        color: const Color(0xFF8B909A).withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12 * scale),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            offset: const Offset(0, 3),
+            blurRadius: 4,
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutCubic,
+            left: _selectedTab == 'knife' ? 6 * scale : toggleWidth / 2,
+            top: 5 * scale,
+            width: pillWidth,
+            height: toggleHeight - 10 * scale,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF404040).withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(8 * scale),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () {
-                      setState(() {
-                        _selectedTab = 'knife';
-                      });
+                      if (_selectedTab != 'knife') {
+                        setState(() {
+                          _selectedTab = 'knife';
+                        });
+                      }
                     },
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'KNIFE',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 15 * scale,
                           fontWeight: FontWeight.w900,
                           fontFamily: 'Montserrat',
                         ),
@@ -222,19 +282,25 @@ class _CustomizationPageState extends State<CustomizationPage> {
                     ),
                   ),
                 ),
-                Expanded(
+              ),
+              Expanded(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
                   child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () {
-                      setState(() {
-                        _selectedTab = 'target';
-                      });
+                      if (_selectedTab != 'target') {
+                        setState(() {
+                          _selectedTab = 'target';
+                        });
+                      }
                     },
-                    child: const Center(
+                    child: Center(
                       child: Text(
                         'TARGET',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 15 * scale,
                           fontWeight: FontWeight.w900,
                           fontFamily: 'Montserrat',
                         ),
@@ -242,33 +308,37 @@ class _CustomizationPageState extends State<CustomizationPage> {
                     ),
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildGrid() {
-    final data = _selectedTab == 'knife' ? _knifeData : _targetData;
+  Widget _buildGrid(double scale) {
+    final isKnifeTab = _selectedTab == 'knife';
+    final data = isKnifeTab ? _knifeData : _targetData;
+
     return GridView.builder(
+      key: ValueKey(_selectedTab),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
-      physics: const BouncingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 28,
-        mainAxisSpacing: 15,
+        crossAxisSpacing: 18 * scale,
+        mainAxisSpacing: 18 * scale,
         childAspectRatio: 130 / 160,
       ),
       itemCount: data.length,
       itemBuilder: (context, index) {
-        return _buildItemCard(index);
+        return _buildItemCard(index, scale);
       },
     );
   }
 
-  Widget _buildItemCard(int index) {
+  Widget _buildItemCard(int index, double scale) {
     final data = _selectedTab == 'knife' ? _knifeData : _targetData;
     final item = data[index];
     final isSelected = _selectedTab == 'knife'
@@ -276,8 +346,10 @@ class _CustomizationPageState extends State<CustomizationPage> {
         : _selectedTargetIndex == index;
 
     return _ItemCard(
+      key: ValueKey('${_selectedTab}_$index'),
       knife: item,
       isSelected: isSelected,
+      scale: scale,
       onTap: () async {
         setState(() {
           if (_selectedTab == 'knife') {
@@ -299,11 +371,14 @@ class _CustomizationPageState extends State<CustomizationPage> {
 class _ItemCard extends StatefulWidget {
   final Map<String, dynamic> knife;
   final bool isSelected;
+  final double scale;
   final VoidCallback onTap;
 
   const _ItemCard({
+    super.key,
     required this.knife,
     required this.isSelected,
+    required this.scale,
     required this.onTap,
   });
 
@@ -316,146 +391,147 @@ class _ItemCardState extends State<_ItemCard> {
 
   @override
   Widget build(BuildContext context) {
-    const lipHeight = 5.0;
-    const baseWidth = 130.0;
-    const baseHeight = 160.0;
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) => setState(() => _isPressed = false),
-      onTapCancel: () => setState(() => _isPressed = false),
-      onTap: widget.onTap,
-      child: SizedBox(
-        width: baseWidth,
-        height: baseHeight,
-        child: Stack(
-          children: [
-            // 3D bottom lip (darker gray)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: baseHeight - lipHeight,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF686D76),
-                  borderRadius: BorderRadius.circular(12),
+    final lipHeight = 5.0 * widget.scale;
+    final baseWidth = 130.0 * widget.scale;
+    final baseHeight = 160.0 * widget.scale;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        onTap: widget.onTap,
+        child: SizedBox(
+          width: baseWidth,
+          height: baseHeight,
+          child: Stack(
+            children: [
+              // 3D bottom lip
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: baseHeight - lipHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF686D76),
+                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                  ),
                 ),
               ),
-            ),
-            // Main face (lighter gray)
-            AnimatedPositioned(
-              duration: _isPressed
-                  ? const Duration(milliseconds: 50)
-                  : const Duration(milliseconds: 100),
-              top: _isPressed ? lipHeight : 0,
-              left: 0,
-              right: 0,
-              bottom: _isPressed ? 0 : lipHeight,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8B909A),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Stack(
-                    children: [
-                      // Main circle (light gray)
-                      Positioned(
-                        left: 25,
-                        top: 40,
-                        child: Container(
-                          width: 80,
-                          height: 80,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE1E1E1),
-                            shape: BoxShape.circle,
+              // Main face
+              AnimatedPositioned(
+                duration: _isPressed
+                    ? const Duration(milliseconds: 50)
+                    : const Duration(milliseconds: 100),
+                top: _isPressed ? lipHeight : 0,
+                left: 0,
+                right: 0,
+                bottom: _isPressed ? 0 : lipHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8B909A),
+                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                    child: Stack(
+                      children: [
+                        // Main circle (light gray)
+                        Positioned(
+                          left: 25 * widget.scale,
+                          top: 40 * widget.scale,
+                          child: Container(
+                            width: 80 * widget.scale,
+                            height: 80 * widget.scale,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFE1E1E1),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
-                      // Decorative circles around main circle (matching your image)
-                      Positioned(
-                        right: 8,
-                        top: 75,
-                        child: Container(
-                          width: 17,
-                          height: 17,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEAEAEA),
-                            shape: BoxShape.circle,
+                        // Decorative circles
+                        Positioned(
+                          right: 8 * widget.scale,
+                          top: 75 * widget.scale,
+                          child: Container(
+                            width: 17 * widget.scale,
+                            height: 17 * widget.scale,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEAEAEA),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        left: 12,
-                        top: 75,
-                        child: Container(
-                          width: 11,
-                          height: 11,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEAEAEA),
-                            shape: BoxShape.circle,
+                        Positioned(
+                          left: 12 * widget.scale,
+                          top: 75 * widget.scale,
+                          child: Container(
+                            width: 11 * widget.scale,
+                            height: 11 * widget.scale,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEAEAEA),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned(
-                        right: 15,
-                        top: 38,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFEAEAEA),
-                            shape: BoxShape.circle,
+                        Positioned(
+                          right: 15 * widget.scale,
+                          top: 38 * widget.scale,
+                          child: Container(
+                            width: 8 * widget.scale,
+                            height: 8 * widget.scale,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEAEAEA),
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
-                      ),
-                      // Knife image centered in main circle
-                      Positioned(
-                        left: 10,
-                        top: 25,
-                        child: SizedBox(
-                          width: 110,
-                          height: 110,
-                          child: Center(
-                            child: Transform.flip(
-                              flipY: widget.knife['flipY'] as bool,
-                              child: Transform.rotate(
-                                angle: widget.knife['rotation'] as double,
-                                child: SizedBox(
-                                  width: 125,
-                                  height: 125,
-                                  child: Image.asset(
-                                    widget.knife['asset'] as String,
-                                    width: 125,
-                                    height: 125,
-                                    fit: BoxFit.contain,
-                                    filterQuality: FilterQuality.high,
+                        // Item image centered in main circle
+                        Positioned(
+                          left: 10 * widget.scale,
+                          top: 25 * widget.scale,
+                          child: SizedBox(
+                            width: 110 * widget.scale,
+                            height: 110 * widget.scale,
+                            child: Center(
+                              child: Transform.flip(
+                                flipY: widget.knife['flipY'] as bool,
+                                child: Transform.rotate(
+                                  angle: widget.knife['rotation'] as double,
+                                  child: SizedBox(
+                                    width: 125 * widget.scale,
+                                    height: 125 * widget.scale,
+                                    child: Image.asset(
+                                      widget.knife['asset'] as String,
+                                      fit: BoxFit.contain,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      // Selected checkmark
-                      if (widget.isSelected)
-                        Positioned(
-                          right: 10,
-                          top: 10,
-                          child: Image.asset(
-                            'assets/images/selected.png',
-                            width: 28,
-                            height: 28,
-                            fit: BoxFit.contain,
+                        // Selected checkmark
+                        if (widget.isSelected)
+                          Positioned(
+                            right: 8 * widget.scale,
+                            top: 8 * widget.scale,
+                            child: Image.asset(
+                              'assets/images/selected.png',
+                              width: 24 * widget.scale,
+                              height: 24 * widget.scale,
+                              fit: BoxFit.contain,
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

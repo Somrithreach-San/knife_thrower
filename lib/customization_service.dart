@@ -5,6 +5,10 @@ class CustomizationService {
   static const String _selectedKnifeKey = 'selected_knife';
   static const String _selectedTargetKey = 'selected_target';
 
+  // In-memory cache to avoid repeated asynchronous disk lookups
+  static int? _cachedKnifeIndex;
+  static int? _cachedTargetIndex;
+
   // List of available knives (red versions)
   static const List<String> knives = [
     'assets/images/red_knife_v2.png',
@@ -53,12 +57,12 @@ class CustomizationService {
 
   // Get red version of a knife by index
   static String getRedKnifeByIndex(int index) {
-    return knives[index];
+    return knives[index.clamp(0, knives.length - 1)];
   }
 
   // Get blue version of a knife by index
   static String getBlueKnifeByIndex(int index) {
-    return blueKnives[index];
+    return blueKnives[index.clamp(0, blueKnives.length - 1)];
   }
 
   // Get red version of a knife
@@ -81,12 +85,12 @@ class CustomizationService {
 
   // Get broken red version by index
   static String getBrokenRedKnifeByIndex(int index) {
-    return brokenRedKnives[index];
+    return brokenRedKnives[index.clamp(0, brokenRedKnives.length - 1)];
   }
 
   // Get broken blue version by index
   static String getBrokenBlueKnifeByIndex(int index) {
-    return brokenBlueKnives[index];
+    return brokenBlueKnives[index.clamp(0, brokenBlueKnives.length - 1)];
   }
 
   // Get broken red version (default to v2)
@@ -104,32 +108,71 @@ class CustomizationService {
     return 'assets/images/grey_knife_v2.png';
   }
 
-  static Future<int> getSelectedKnifeIndex() async {
+  /// Single batched fetch for all customization data (reads preferences once)
+  static Future<
+    ({int knifeIndex, String knifeAsset, int targetIndex, String targetAsset})
+  >
+  loadSelections() async {
+    if (_cachedKnifeIndex != null && _cachedTargetIndex != null) {
+      final kIdx = _cachedKnifeIndex!.clamp(0, knives.length - 1);
+      final tIdx = _cachedTargetIndex!.clamp(0, targets.length - 1);
+      return (
+        knifeIndex: kIdx,
+        knifeAsset: knives[kIdx],
+        targetIndex: tIdx,
+        targetAsset: targets[tIdx],
+      );
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    final index = prefs.getInt(_selectedKnifeKey) ?? 0;
-    debugPrint('Loaded knife index: $index, asset: ${knives[index]}');
-    return index;
+    final kIdx = (prefs.getInt(_selectedKnifeKey) ?? 0).clamp(
+      0,
+      knives.length - 1,
+    );
+    final tIdx = (prefs.getInt(_selectedTargetKey) ?? 0).clamp(
+      0,
+      targets.length - 1,
+    );
+
+    _cachedKnifeIndex = kIdx;
+    _cachedTargetIndex = tIdx;
+
+    return (
+      knifeIndex: kIdx,
+      knifeAsset: knives[kIdx],
+      targetIndex: tIdx,
+      targetAsset: targets[tIdx],
+    );
+  }
+
+  static Future<int> getSelectedKnifeIndex() async {
+    if (_cachedKnifeIndex != null) return _cachedKnifeIndex!;
+    final selections = await loadSelections();
+    return selections.knifeIndex;
   }
 
   static Future<void> setSelectedKnifeIndex(int index) async {
+    final validIndex = index.clamp(0, knives.length - 1);
+    _cachedKnifeIndex = validIndex;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_selectedKnifeKey, index);
-    debugPrint('Saved knife index: $index, asset: ${knives[index]}');
+    await prefs.setInt(_selectedKnifeKey, validIndex);
+    debugPrint('Saved knife index: $validIndex, asset: ${knives[validIndex]}');
   }
 
   static Future<int> getSelectedTargetIndex() async {
-    final prefs = await SharedPreferences.getInstance();
-    final index = prefs.getInt(_selectedTargetKey) ?? 0;
-    // Ensure index is valid (in case targets list was shortened)
-    final validIndex = index.clamp(0, targets.length - 1);
-    debugPrint('Loaded target index: $validIndex, asset: ${targets[validIndex]}');
-    return validIndex;
+    if (_cachedTargetIndex != null) return _cachedTargetIndex!;
+    final selections = await loadSelections();
+    return selections.targetIndex;
   }
 
   static Future<void> setSelectedTargetIndex(int index) async {
+    final validIndex = index.clamp(0, targets.length - 1);
+    _cachedTargetIndex = validIndex;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_selectedTargetKey, index);
-    debugPrint('Saved target index: $index, asset: ${targets[index]}');
+    await prefs.setInt(_selectedTargetKey, validIndex);
+    debugPrint(
+      'Saved target index: $validIndex, asset: ${targets[validIndex]}',
+    );
   }
 
   static Future<String> getSelectedKnife() async {

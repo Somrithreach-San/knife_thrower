@@ -12,6 +12,7 @@ import 'home_screen.dart';
 import 'utils.dart';
 import 'bot_ai.dart';
 import 'customization_service.dart';
+import 'back_arrow_button.dart';
 
 // ─────────────────────────────────────────────
 //  CONSTANTS
@@ -47,13 +48,12 @@ class GameConfig {
 // ─────────────────────────────────────────────
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Configure audio context to use Low Latency (SoundPool) on Android
   // This prevents the "(1, -19)" MediaPlayer limit exhaustion error
-  AudioPlayer.global.setAudioContext(AudioContextConfig(
-    respectSilence: true,
-    stayAwake: false,
-  ).build());
+  AudioPlayer.global.setAudioContext(
+    AudioContextConfig(respectSilence: true, stayAwake: false).build(),
+  );
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -78,30 +78,64 @@ class KnifeThrowerApp extends StatelessWidget {
       ),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
-        
-        // If the screen is wider than it is tall (like a desktop/web browser),
-        // we constrain the game into a mobile-sized frame centered on screen.
-        if (mediaQuery.size.width > mediaQuery.size.height && child != null) {
-          final targetWidth = mediaQuery.size.height * (GameConfig.baseWidth / GameConfig.baseHeight);
-          return Container(
-            color: Colors.black, // Sleek dark borders
-            child: Center(
-              child: ClipRect(
-                child: SizedBox(
-                  width: targetWidth,
-                  height: mediaQuery.size.height,
-                  child: MediaQuery(
-                    // Override the media query so the app inside knows its constrained size
-                    data: mediaQuery.copyWith(
-                      size: Size(targetWidth, mediaQuery.size.height),
+        // Detect mobile phone rotated in landscape mode (low height, wide aspect ratio)
+        final isMobileLandscape =
+            mediaQuery.size.height < 500 &&
+            mediaQuery.size.width > mediaQuery.size.height;
+
+        if (isMobileLandscape) {
+          return Scaffold(
+            backgroundColor: const Color(0xFF0A1628),
+            body: Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF0D1D36),
+                    Color(0xFF0B172A),
+                    Color(0xFF091222),
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.screen_rotation_rounded,
+                      size: 48,
+                      color: Color(0xFF2CDFA2),
                     ),
-                    child: child,
-                  ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'PORTRAIT ONLY',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'Montserrat',
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Please rotate your phone upright to play',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'Montserrat',
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           );
         }
+
         return child!;
       },
       home: const HomeScreen(),
@@ -134,21 +168,18 @@ class _GamePageState extends State<GamePage> {
 
   Future<void> _loadGame() async {
     try {
-      final selectedKnifeIndex =
-          await CustomizationService.getSelectedKnifeIndex();
-      final selectedKnife = await CustomizationService.getSelectedKnife();
-      final selectedTarget = await CustomizationService.getSelectedTarget();
+      final selections = await CustomizationService.loadSelections();
       debugPrint(
-        'Game loading with knife index: $selectedKnifeIndex, knife: $selectedKnife, target: $selectedTarget',
+        'Game loading with knife index: ${selections.knifeIndex}, knife: ${selections.knifeAsset}, target: ${selections.targetAsset}',
       );
       if (mounted) {
         setState(() {
           _game = KnifeThrowerGame(
             isBotMode: widget.isBotMode,
             botDifficulty: widget.botDifficulty,
-            selectedKnifeAsset: selectedKnife,
-            selectedTargetAsset: selectedTarget,
-            selectedKnifeIndex: selectedKnifeIndex,
+            selectedKnifeAsset: selections.knifeAsset,
+            selectedTargetAsset: selections.targetAsset,
+            selectedKnifeIndex: selections.knifeIndex,
           );
           _isLoading = false;
         });
@@ -174,36 +205,73 @@ class _GamePageState extends State<GamePage> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A1628),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              color: Color(0xFF2CDFA2),
+              strokeWidth: 3,
+            ),
+          ),
+        ),
       );
     }
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1a1a2e), Color(0xFF16213e), Color(0xFF0f3460)],
-          ),
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            RepaintBoundary(
-              child: GameWidget(
-                game: _game,
-                overlayBuilderMap: {
-                  'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
-                  'gameOver': (ctx, g) =>
-                      GameOverOverlay(game: g as KnifeThrowerGame),
-                  'countdown': (ctx, g) =>
-                      CountdownOverlay(game: g as KnifeThrowerGame),
-                },
-              ),
+      backgroundColor: const Color(0xFF0A1628),
+      body: Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent) {
+            final key = event.logicalKey;
+            if (key == LogicalKeyboardKey.space ||
+                key == LogicalKeyboardKey.arrowDown ||
+                key == LogicalKeyboardKey.keyS) {
+              _game.handleInput(1);
+              return KeyEventResult.handled;
+            } else if (key == LogicalKeyboardKey.arrowUp ||
+                key == LogicalKeyboardKey.keyW) {
+              _game.handleInput(2);
+              return KeyEventResult.handled;
+            }
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
             ),
-          ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RepaintBoundary(
+                child: GameWidget(
+                  game: _game,
+                  overlayBuilderMap: {
+                    'hud': (ctx, g) => HudOverlay(game: g as KnifeThrowerGame),
+                    'gameOver': (ctx, g) =>
+                        GameOverOverlay(game: g as KnifeThrowerGame),
+                    'countdown': (ctx, g) =>
+                        CountdownOverlay(game: g as KnifeThrowerGame),
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -320,8 +388,7 @@ class KnifeThrowerGame extends FlameGame
     try {
       await super.onLoad();
 
-      // Initialize audio pools for high-frequency sound effects only
-      // This reduces resource usage and avoids initialization delays
+      // Initialize audio pools for high-frequency sound effects concurrently
       final highFreqSounds = [
         'Arrow_Hit_1.ogg',
         'Arrow_Hit_2.ogg',
@@ -330,27 +397,26 @@ class KnifeThrowerGame extends FlameGame
         'Arrow_Throw_2.ogg',
         'Arrow_Throw_3.ogg',
         'Metal_Clashed.ogg',
-        // 'Tree_trunk_target_cracking_1.mp3',
-        // 'Tree_trunk_target_cracking_2.mp3',
       ];
 
-      for (final sound in highFreqSounds) {
-        try {
-          _audioPools[sound] = await AudioPool.create(
-            source: AssetSource('audio/$sound'),
-            maxPlayers: 2, // Reduced from 4 to prevent MediaPlayer limit exhaustion
-          );
-        } catch (e) {
-          debugPrint('Error creating AudioPool for $sound: $e');
-        }
-      }
-
-      // Load only the necessary assets
-      await _loadAssetsAndInit(
-        selectedKnifeAsset,
-        selectedTargetAsset,
-        selectedKnifeIndex,
-      );
+      // Parallelize audio pool creation and asset loading for faster game initialization
+      await Future.wait([
+        ...highFreqSounds.map((sound) async {
+          try {
+            _audioPools[sound] = await AudioPool.create(
+              source: AssetSource('audio/$sound'),
+              maxPlayers: 2,
+            );
+          } catch (e) {
+            debugPrint('Error creating AudioPool for $sound: $e');
+          }
+        }),
+        _loadAssetsAndInit(
+          selectedKnifeAsset,
+          selectedTargetAsset,
+          selectedKnifeIndex,
+        ),
+      ]);
     } catch (e) {
       debugPrint('Error in onLoad: $e');
       // Fallback to default assets
@@ -530,7 +596,8 @@ class KnifeThrowerGame extends FlameGame
 
   void triggerHapticFeedback() {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastHapticTime > 50) { // 50ms debounce
+    if (now - _lastHapticTime > 50) {
+      // 50ms debounce
       HapticFeedback.mediumImpact();
       _lastHapticTime = now;
     }
@@ -539,7 +606,8 @@ class KnifeThrowerGame extends FlameGame
   void _prepareNextKnife(int player) {
     final k = player == 1 ? p1Knife : p2Knife;
 
-    if (isGameOver || isTransitioning || 
+    if (isGameOver ||
+        isTransitioning ||
         (player == 1 && p1ThrowsMade >= GameConfig.knivesPerRound) ||
         (player == 2 && p2ThrowsMade >= GameConfig.knivesPerRound)) {
       // Hide the knife off-screen when no more throws are allowed
@@ -1328,53 +1396,90 @@ class HudOverlay extends StatelessWidget {
       builder: (context, constraints) {
         final screenWidth = constraints.maxWidth;
         final screenHeight = constraints.maxHeight;
-        final scale = math.min(
-          screenWidth / GameConfig.baseWidth,
-          screenHeight / GameConfig.baseHeight,
-        );
+        final bool isWidescreen =
+            screenWidth >= 768 &&
+            screenHeight >= 500 &&
+            screenWidth > screenHeight * 0.85;
+
+        final scale = isWidescreen
+            ? math.min(1.1, screenHeight / GameConfig.baseHeight)
+            : math.min(
+                screenWidth / GameConfig.baseWidth,
+                screenHeight / GameConfig.baseHeight,
+              );
 
         return Stack(
           children: [
-            // Blue player (top) dots - Wrapped in SafeArea
-            Positioned(
-              right: 20 * scale,
-              top: 0,
-              bottom: screenHeight / 2,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 20 * scale),
-                  child: _DotColumn(
+            // Blue player (top) dots
+            if (isWidescreen)
+              Positioned(
+                right: 48 * scale,
+                top: 36 * scale,
+                child: SafeArea(
+                  child: _DotIndicator(
                     notifier: game.p2ThrowResults,
                     baseColor: Colors.blueAccent,
-                    isTop: true,
+                    isRow: true,
                     scale: scale,
                   ),
                 ),
-              ),
-            ),
-            // Red player (bottom) dots - Wrapped in SafeArea
-            Positioned(
-              left: 20 * scale,
-              top: screenHeight / 2,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
+              )
+            else
+              Positioned(
+                right: 20 * scale,
+                top: 0,
+                bottom: screenHeight / 2,
+                child: SafeArea(
+                  bottom: false,
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 20 * scale),
-                    child: _DotColumn(
-                      notifier: game.p1ThrowResults,
-                      baseColor: Colors.redAccent,
-                      isTop: false,
+                    padding: EdgeInsets.only(top: 20 * scale),
+                    child: _DotIndicator(
+                      notifier: game.p2ThrowResults,
+                      baseColor: Colors.blueAccent,
+                      isRow: false,
                       scale: scale,
                     ),
                   ),
                 ),
               ),
-            ),
-            // Score display
+
+            // Red player (bottom) dots
+            if (isWidescreen)
+              Positioned(
+                left: 48 * scale,
+                bottom: 36 * scale,
+                child: SafeArea(
+                  child: _DotIndicator(
+                    notifier: game.p1ThrowResults,
+                    baseColor: Colors.redAccent,
+                    isRow: true,
+                    scale: scale,
+                  ),
+                ),
+              )
+            else
+              Positioned(
+                left: 20 * scale,
+                top: screenHeight / 2,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(bottom: 20 * scale),
+                      child: _DotIndicator(
+                        notifier: game.p1ThrowResults,
+                        baseColor: Colors.redAccent,
+                        isRow: false,
+                        scale: scale,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Score display (always on left edge)
             Positioned(
               left: -40 * scale,
               top: (screenHeight - 120 * scale) / 2,
@@ -1443,7 +1548,8 @@ class HudOverlay extends StatelessWidget {
                 ),
               ),
             ),
-            // Exit button
+
+            // Exit button (always on right edge)
             Positioned(
               right: -40 * scale,
               top: (screenHeight - 120 * scale) / 2,
@@ -1475,7 +1581,6 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
   @override
   void initState() {
     super.initState();
-    // 0.8 seconds to fully fill and exit (made more responsive)
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -1483,10 +1588,8 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
 
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-          (route) => false,
-        );
+        // Pop the game and return to home screen
+        Navigator.of(context).pop();
       }
     });
   }
@@ -1498,16 +1601,13 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
   }
 
   void _onHoldStart() {
-    // Jump to 20% immediately so the user sees the red bar and knows it's a hold button
-    if (_controller.value < 0.2) {
-      _controller.value = 0.2;
-    }
     _controller.forward();
-    HapticFeedback.lightImpact();
   }
 
   void _onHoldEnd() {
-    _controller.reverse();
+    if (_controller.status != AnimationStatus.completed) {
+      _controller.reverse();
+    }
   }
 
   @override
@@ -1563,16 +1663,16 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
   }
 }
 
-class _DotColumn extends StatelessWidget {
+class _DotIndicator extends StatelessWidget {
   final ValueNotifier<List<int?>> notifier;
   final Color baseColor;
-  final bool isTop;
+  final bool isRow;
   final double scale;
 
-  const _DotColumn({
+  const _DotIndicator({
     required this.notifier,
     required this.baseColor,
-    required this.isTop,
+    this.isRow = false,
     required this.scale,
   });
 
@@ -1581,31 +1681,36 @@ class _DotColumn extends StatelessWidget {
     return ValueListenableBuilder<List<int?>>(
       valueListenable: notifier,
       builder: (context, results, _) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(GameConfig.knivesPerRound, (index) {
-            final result = results[index];
-            Color dotColor;
-            if (result == null) {
-              dotColor = baseColor;
-            } else if (result == 1) {
-              dotColor = Colors.green;
-            } else {
-              dotColor = Colors.grey;
-            }
+        final children = List.generate(GameConfig.knivesPerRound, (index) {
+          final result = results[index];
+          Color dotColor;
+          if (result == null) {
+            dotColor = baseColor;
+          } else if (result == 1) {
+            dotColor = Colors.green;
+          } else {
+            dotColor = Colors.grey;
+          }
 
-            return Container(
-              margin: EdgeInsets.symmetric(vertical: 4 * scale),
-              width: 12 * scale,
-              height: 12 * scale,
-              decoration: BoxDecoration(
-                color: dotColor,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.black12, width: 1 * scale),
-              ),
-            );
-          }),
-        );
+          return Container(
+            margin: isRow
+                ? EdgeInsets.symmetric(horizontal: 4 * scale)
+                : EdgeInsets.symmetric(vertical: 4 * scale),
+            width: 12 * scale,
+            height: 12 * scale,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.black12, width: 1 * scale),
+            ),
+          );
+        });
+
+        if (isRow) {
+          return Row(mainAxisSize: MainAxisSize.min, children: children);
+        }
+
+        return Column(mainAxisSize: MainAxisSize.min, children: children);
       },
     );
   }
@@ -1803,6 +1908,19 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                             scale: scale,
                             alignment: Alignment.centerRight,
                             child: const HoldToExitButton(),
+                          ),
+                        ),
+                      ),
+                      // Top-left Back Arrow button
+                      Positioned(
+                        left: 24,
+                        top: 24,
+                        child: SafeArea(
+                          child: BackArrowButton(
+                            onTap: () {
+                              Navigator.of(context).pop();
+                            },
+                            scale: scale,
                           ),
                         ),
                       ),

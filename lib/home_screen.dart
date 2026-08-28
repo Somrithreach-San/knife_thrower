@@ -12,132 +12,150 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _loadAssets();
-  }
+  bool _assetsPrecached = false;
 
-  Future<void> _loadAssets() async {
-    // Precache the logo for Flutter's ImageCache
-    precacheImage(
-      const AssetImage('assets/images/Home_page_logo.png'),
-      context,
-    );
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_assetsPrecached) {
+      _assetsPrecached = true;
+      precacheImage(
+        const AssetImage('assets/images/Home_page_logo.png'),
+        context,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0A1628),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
           final screenHeight = constraints.maxHeight;
-          final scale = math.min(
-            screenWidth / GameConfig.baseWidth,
-            screenHeight / GameConfig.baseHeight,
-          );
+
+          // For desktop/wide screens, scale content cleanly up to 1.1x without ballooning
+          final bool isDesktop = screenWidth >= 768 && screenHeight >= 500;
+          final double effectiveContentWidth = isDesktop ? 400.0 : screenWidth;
+          final scale = isDesktop
+              ? math.min(1.1, screenHeight / GameConfig.baseHeight)
+              : math.min(
+                  screenWidth / GameConfig.baseWidth,
+                  screenHeight / GameConfig.baseHeight,
+                );
+
+          final double logoWidth = isDesktop
+              ? math.min(380.0, screenWidth * 0.35)
+              : screenWidth * 0.7;
 
           return Container(
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFF1a1a2e),
-                  Color(0xFF16213e),
-                  Color(0xFF0f3460),
+                  Color(0xFF0D1D36),
+                  Color(0xFF0B172A),
+                  Color(0xFF091222),
                 ],
               ),
             ),
             child: Stack(
-              fit: StackFit.expand,
               children: [
-                SafeArea(
-                  bottom: true,
-                  left: true,
-                  right: true,
-                  top: false,
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: 32 * scale,
-                      right: 32 * scale,
-                      bottom: 32 * scale,
+                // Top Centered Logo
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Image.asset(
+                    'assets/images/Home_page_logo.png',
+                    width: logoWidth,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+
+                // Centered Main Content
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: effectiveContentWidth,
                     ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Logo at very top
-                        Image.asset(
-                          'assets/images/Home_page_logo.png',
-                          width: screenWidth * 0.7,
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                        ),
-                        // Spacer to push buttons to center
-                        const Spacer(),
-                        // Title
-                        Text(
-                          '2 PLAYER GAME',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14 * scale,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white.withValues(alpha: 0.5),
-                            fontFamily: 'Montserrat',
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 32 * scale),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Spacer(flex: 7),
+
+                          // Subtitle
+                          Text(
+                            '2 PLAYER GAME',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13 * scale,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontFamily: 'Montserrat',
+                              letterSpacing: 1.2,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 6 * scale),
-                        Text(
-                          'KNIFE THROWER',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 30 * scale,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            fontFamily: 'Montserrat',
+                          SizedBox(height: 8 * scale),
+
+                          // Title
+                          Text(
+                            'KNIFE THROWER',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 30 * scale,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              fontFamily: 'Montserrat',
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 40 * scale),
-                        // Play Button
-                        GameButton(
-                          label: 'PLAY',
-                          mainColor: const Color(0xFF2CDFA2),
-                          accentColor: const Color(0xFF52EBB6),
-                          lipColor: const Color(0xFF1C9B71),
-                          scale: scale,
-                          fontSize: 20,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    const ModeSelectionScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        SizedBox(height: 25 * scale),
-                        // Customization Button
-                        GameButton(
-                          label: 'CUSTOMIZATION',
-                          mainColor: const Color(0xFF999999),
-                          accentColor: const Color(0xFF404040),
-                          lipColor: const Color(0xFF747373),
-                          scale: scale,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const CustomizationPage(),
-                              ),
-                            );
-                          },
-                        ),
-                        const Spacer(),
-                      ],
+                          SizedBox(height: 36 * scale),
+
+                          // Play Button (Green)
+                          GameButton(
+                            label: 'PLAY',
+                            mainColor: const Color(0xFF2CDFA2),
+                            accentColor: const Color(0xFF52EBB6),
+                            lipColor: const Color(0xFF1C9B71),
+                            scale: scale,
+                            fontSize: 20,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const ModeSelectionScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(height: 20 * scale),
+
+                          // Customization Button (Orange/Yellow - matching Figma)
+                          GameButton(
+                            label: 'CUSTOMIZATION',
+                            mainColor: const Color(0xFFFFA000),
+                            accentColor: const Color(0xFFFFB74D),
+                            lipColor: const Color(0xFFD97706),
+                            scale: scale,
+                            fontSize: 16,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const CustomizationPage(),
+                                ),
+                              );
+                            },
+                          ),
+                          const Spacer(flex: 3),
+                        ],
+                      ),
                     ),
                   ),
                 ),
