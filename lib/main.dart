@@ -7,6 +7,7 @@ import 'package:flame_audio/flame_audio.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'home_screen.dart';
@@ -302,18 +303,23 @@ class _GamePageState extends State<GamePage> {
 class TriangleParticle extends Particle {
   final Paint paint;
   final double radius;
+  late final Path _path;
 
-  TriangleParticle({required this.paint, required this.radius, super.lifespan});
+  TriangleParticle({
+    required this.paint,
+    required this.radius,
+    super.lifespan,
+  }) {
+    _path = Path()
+      ..moveTo(0, -radius * 2.0)
+      ..lineTo(radius * 0.5, radius)
+      ..lineTo(-radius * 0.5, radius)
+      ..close();
+  }
 
   @override
   void render(Canvas canvas) {
-    final path = Path();
-    // Create an elongated "spike" triangle
-    path.moveTo(0, -radius * 2.0); // Tip
-    path.lineTo(radius * 0.5, radius); // Bottom right
-    path.lineTo(-radius * 0.5, radius); // Bottom left
-    path.close();
-    canvas.drawPath(path, paint);
+    canvas.drawPath(_path, paint);
   }
 }
 
@@ -387,6 +393,10 @@ class KnifeThrowerGame extends FlameGame
 
   final Map<int, Vector2> _activeDragStart = {};
 
+  // Pre-allocated reusable audio players for Web (avoids creating/destroying DOM audio elements on mobile web)
+  final List<AudioPlayer> _webAudioPlayers = [];
+  int _currentWebPlayerIndex = 0;
+
   // Audio pools for low-latency playback
   final Map<String, AudioPool> _audioPools = {};
 
@@ -410,7 +420,7 @@ class KnifeThrowerGame extends FlameGame
     try {
       await super.onLoad();
 
-      // Initialize audio pools for high-frequency sound effects concurrently
+      // Preload all high-frequency sounds into memory cache for zero-latency playback on Web
       final highFreqSounds = [
         'Arrow_Hit_1.ogg',
         'Arrow_Hit_2.ogg',
@@ -421,18 +431,30 @@ class KnifeThrowerGame extends FlameGame
         'Metal_Clashed.ogg',
       ];
 
-      // Parallelize audio pool creation and asset loading for faster game initialization
+      // Parallelize audio pre-caching and asset loading for faster game initialization
       await Future.wait([
-        ...highFreqSounds.map((sound) async {
-          try {
-            _audioPools[sound] = await AudioPool.create(
-              source: AssetSource('audio/$sound'),
-              maxPlayers: 2,
-            );
-          } catch (e) {
-            debugPrint('Error creating AudioPool for $sound: $e');
-          }
-        }),
+        FlameAudio.audioCache.loadAll(highFreqSounds),
+        if (kIsWeb)
+          ...List.generate(4, (_) async {
+            try {
+              final p = AudioPlayer();
+              await p.setReleaseMode(ReleaseMode.stop);
+              _webAudioPlayers.add(p);
+            } catch (e) {
+              debugPrint('Error creating web audio player: $e');
+            }
+          })
+        else
+          ...highFreqSounds.map((sound) async {
+            try {
+              _audioPools[sound] = await AudioPool.create(
+                source: AssetSource('audio/$sound'),
+                maxPlayers: 3,
+              );
+            } catch (e) {
+              debugPrint('Error creating AudioPool for $sound: $e');
+            }
+          }),
         _loadAssetsAndInit(
           selectedKnifeAsset,
           selectedTargetAsset,
@@ -526,14 +548,26 @@ class KnifeThrowerGame extends FlameGame
 
   void playPoolSound(String sound, {double volume = 1.0}) {
     try {
+      if (kIsWeb && _webAudioPlayers.isNotEmpty) {
+        // Reuse fixed circular pool of pre-allocated players: avoids creating & destroying HTML Audio elements on mobile web
+        final player = _webAudioPlayers[_currentWebPlayerIndex];
+        _currentWebPlayerIndex =
+            (_currentWebPlayerIndex + 1) % _webAudioPlayers.length;
+        player
+            .stop()
+            .then((_) {
+              player.play(AssetSource('audio/$sound'), volume: volume);
+            })
+            .catchError((_) {});
+        return;
+      }
+
       if (_audioPools.containsKey(sound)) {
         _audioPools[sound]?.start(volume: volume);
       } else {
-        // Fallback for sounds not in pool or if pool initialization failed
         FlameAudio.play(sound, volume: volume);
       }
     } catch (e) {
-      // Silently ignore audio errors to prevent crashes
       debugPrint('Audio error playing $sound: $e');
     }
   }
@@ -617,6 +651,9 @@ class KnifeThrowerGame extends FlameGame
   int _lastHapticTime = 0;
 
   void triggerHapticFeedback() {
+    if (kIsWeb) {
+      return; // Skip haptic vibration on web to prevent main thread JS interop stalls
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - _lastHapticTime > 50) {
       // 50ms debounce
@@ -830,6 +867,11 @@ class KnifeThrowerGame extends FlameGame
     _activeDragStart.remove(pointerId);
   }
 
+  @override
+  void onDragCancel(int pointerId) {
+    _activeDragStart.remove(pointerId);
+  }
+
   void handleInput(int player) {
     // Only human input should reset the idle timer (ignore automated bot actions)
     final bool isHumanInput = (player == 1) || (!isBotMode && player == 2);
@@ -1027,10 +1069,13 @@ class KnifeThrowerGame extends FlameGame
         target.position.setFrom(_originalTargetPosition);
         _shakeIntensity = 0;
       } else {
-        // Apply random shake offset
+        // Apply random shake offset without vector allocations
         final offsetX = (_rng.nextDouble() - 0.5) * 2 * _shakeIntensity;
         final offsetY = (_rng.nextDouble() - 0.5) * 2 * _shakeIntensity;
-        target.position = _originalTargetPosition + Vector2(offsetX, offsetY);
+        target.position.setValues(
+          _originalTargetPosition.x + offsetX,
+          _originalTargetPosition.y + offsetY,
+        );
         // Gradually reduce shake intensity
         _shakeIntensity *= 0.85;
       }
@@ -1096,6 +1141,10 @@ class KnifeThrowerGame extends FlameGame
     winnerNotifier.dispose();
     showTapHelperNotifier.dispose();
     isReadyNotifier.dispose();
+    for (final p in _webAudioPlayers) {
+      p.dispose();
+    }
+    _webAudioPlayers.clear();
     super.onRemove();
   }
 }
@@ -1314,9 +1363,10 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     final scale = game.scaleFactor;
     _nextPos.y += direction * GameConfig.knifeSpeed * scale * dt;
 
-    final dist = _nextPos.distanceTo(game.target.position);
+    final distY = (_nextPos.y - game.target.position.y).abs();
+    final hitThreshold = game.target.radius + size.y * 0.5;
 
-    if (dist < game.target.radius + size.y / 2) {
+    if (distY < hitThreshold) {
       _hitTarget();
     } else {
       bool missed = player == 1
@@ -1558,64 +1608,66 @@ class HudOverlay extends StatelessWidget {
               Positioned(
                 left: -40 * scale,
                 top: (screenHeight - 120 * scale) / 2,
-                child: Transform.scale(
-                  scale: scale,
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    width: 80,
-                    height: 120,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
-                        topRight: Radius.circular(60),
-                        bottomRight: Radius.circular(60),
+                child: RepaintBoundary(
+                  child: Transform.scale(
+                    scale: scale,
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      width: 80,
+                      height: 120,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topRight: Radius.circular(60),
+                          bottomRight: Radius.circular(60),
+                        ),
                       ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 40),
-                      child: Center(
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ValueListenableBuilder<int>(
-                                valueListenable: game.p1ScoreNotifier,
-                                builder: (_, v, _) => Text(
-                                  '$v',
-                                  style: const TextStyle(
-                                    fontFamily: 'Montserrat',
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.redAccent,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 40),
+                        child: Center(
+                          child: RotatedBox(
+                            quarterTurns: 3,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ValueListenableBuilder<int>(
+                                  valueListenable: game.p1ScoreNotifier,
+                                  builder: (_, v, _) => Text(
+                                    '$v',
+                                    style: const TextStyle(
+                                      fontFamily: 'Montserrat',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.redAccent,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 4),
-                                child: Text(
-                                  '.',
-                                  style: TextStyle(
-                                    fontFamily: 'Montserrat',
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.black54,
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4),
+                                  child: Text(
+                                    '.',
+                                    style: TextStyle(
+                                      fontFamily: 'Montserrat',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.black54,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              ValueListenableBuilder<int>(
-                                valueListenable: game.p2ScoreNotifier,
-                                builder: (_, v, _) => Text(
-                                  '$v',
-                                  style: const TextStyle(
-                                    fontFamily: 'Montserrat',
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.blueAccent,
+                                ValueListenableBuilder<int>(
+                                  valueListenable: game.p2ScoreNotifier,
+                                  builder: (_, v, _) => Text(
+                                    '$v',
+                                    style: const TextStyle(
+                                      fontFamily: 'Montserrat',
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.blueAccent,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1798,40 +1850,42 @@ class _DotIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<int?>>(
-      valueListenable: notifier,
-      builder: (context, results, _) {
-        final children = List.generate(GameConfig.knivesPerRound, (index) {
-          final result = results[index];
-          Color dotColor;
-          if (result == null) {
-            dotColor = baseColor;
-          } else if (result == 1) {
-            dotColor = Colors.green;
-          } else {
-            dotColor = Colors.grey;
+    return RepaintBoundary(
+      child: ValueListenableBuilder<List<int?>>(
+        valueListenable: notifier,
+        builder: (context, results, _) {
+          final children = List.generate(GameConfig.knivesPerRound, (index) {
+            final result = results[index];
+            Color dotColor;
+            if (result == null) {
+              dotColor = baseColor;
+            } else if (result == 1) {
+              dotColor = Colors.green;
+            } else {
+              dotColor = Colors.grey;
+            }
+
+            return Container(
+              margin: isRow
+                  ? EdgeInsets.symmetric(horizontal: 4 * scale)
+                  : EdgeInsets.symmetric(vertical: 4 * scale),
+              width: 12 * scale,
+              height: 12 * scale,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black12, width: 1 * scale),
+              ),
+            );
+          });
+
+          if (isRow) {
+            return Row(mainAxisSize: MainAxisSize.min, children: children);
           }
 
-          return Container(
-            margin: isRow
-                ? EdgeInsets.symmetric(horizontal: 4 * scale)
-                : EdgeInsets.symmetric(vertical: 4 * scale),
-            width: 12 * scale,
-            height: 12 * scale,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black12, width: 1 * scale),
-            ),
-          );
-        });
-
-        if (isRow) {
-          return Row(mainAxisSize: MainAxisSize.min, children: children);
-        }
-
-        return Column(mainAxisSize: MainAxisSize.min, children: children);
-      },
+          return Column(mainAxisSize: MainAxisSize.min, children: children);
+        },
+      ),
     );
   }
 }
