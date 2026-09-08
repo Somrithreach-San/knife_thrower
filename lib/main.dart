@@ -189,18 +189,10 @@ class _GamePageState extends State<GamePage> {
     try {
       final selections = await CustomizationService.loadSelections();
       if (!mounted) return;
-      await Future.wait([
-        precacheImage(
-          const AssetImage('assets/images/Tap_the_screen.gif'),
-          context,
-        ),
-        precacheImage(AssetImage(selections.knifeAsset), context),
-        precacheImage(
-          AssetImage(CustomizationService.getBlueKnife(selections.knifeAsset)),
-          context,
-        ),
-        precacheImage(AssetImage(selections.targetAsset), context),
-      ]);
+      await precacheImage(
+        const AssetImage('assets/images/Tap_the_screen.gif'),
+        context,
+      );
       debugPrint(
         'Game loading with knife index: ${selections.knifeIndex}, knife: ${selections.knifeAsset}, target: ${selections.targetAsset}',
       );
@@ -435,7 +427,7 @@ class KnifeThrowerGame extends FlameGame
       await Future.wait([
         FlameAudio.audioCache.loadAll(highFreqSounds),
         if (kIsWeb)
-          ...List.generate(4, (_) async {
+          ...List.generate(6, (_) async {
             try {
               final p = AudioPlayer();
               await p.setReleaseMode(ReleaseMode.stop);
@@ -549,16 +541,12 @@ class KnifeThrowerGame extends FlameGame
   void playPoolSound(String sound, {double volume = 1.0}) {
     try {
       if (kIsWeb && _webAudioPlayers.isNotEmpty) {
-        // Reuse fixed circular pool of pre-allocated players: avoids creating & destroying HTML Audio elements on mobile web
+        // Fire-and-forget: pick next player from circular pool and play immediately.
+        // Avoids stop().then(play()) microtask jank that caused frame stutter on mobile web.
         final player = _webAudioPlayers[_currentWebPlayerIndex];
         _currentWebPlayerIndex =
             (_currentWebPlayerIndex + 1) % _webAudioPlayers.length;
-        player
-            .stop()
-            .then((_) {
-              player.play(AssetSource('audio/$sound'), volume: volume);
-            })
-            .catchError((_) {});
+        player.play(AssetSource('audio/$sound'), volume: volume);
         return;
       }
 
@@ -949,7 +937,7 @@ class KnifeThrowerGame extends FlameGame
     add(
       ParticleSystemComponent(
         particle: Particle.generate(
-          count: 6,
+          count: kIsWeb ? 3 : 6,
           lifespan: 0.4,
           generator: (i) {
             final spreadAngle =
@@ -1025,7 +1013,7 @@ class KnifeThrowerGame extends FlameGame
     add(
       ParticleSystemComponent(
         particle: Particle.generate(
-          count: 3,
+          count: kIsWeb ? 2 : 3,
           lifespan: 0.4,
           generator: (i) {
             final angle = _rng.nextDouble() * 2 * math.pi;
@@ -1399,14 +1387,15 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
         game.playPoolSound('Metal_Clashed.ogg');
 
         // Calculate world position for clash particles
-        final targetCenter = game.target.position;
+        final targetCenter = game.target.position.clone();
         final impactWorldAngle = game.target.angle + impactLocalAngle;
         final clashVector = Vector2(
           math.cos(impactWorldAngle) * game.target.radius,
           math.sin(impactWorldAngle) * game.target.radius,
         );
         final clashPoint = targetCenter + clashVector;
-        game.triggerClashParticles(clashPoint, player);
+        // Defer particle spawning to next frame to spread component tree rebuild cost
+        Future.microtask(() => game.triggerClashParticles(clashPoint, player));
 
         // Record a miss
         game.recordMiss(player);
@@ -1420,7 +1409,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     // Record hit immediately to trigger cracking sound/visuals without delay
     game.recordHit(player);
 
-    final targetCenter = game.target.position;
+    final targetCenter = game.target.position.clone();
     // Calculate the actual impact point based on the target's current rotation
     // Adjust radius to account for embedDepth (knife penetrates into the target)
     final impactWorldAngle = game.target.angle + impactLocalAngle;
@@ -1435,21 +1424,30 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     final particleColor = player == 1
         ? const Color(0xFFD32F2F)
         : const Color(0xFF1976D2);
-    game.triggerHitParticles(preciseImpactPoint, particleColor, player);
 
     // Add satisfying feedback: screen shake + haptics
-    game.triggerHitShake();
     game.triggerHapticFeedback(); // Debounced phone vibration
 
-    game.target.addStuckKnife(
-      StuckKnife(
-        player: player,
-        sprite: sprite!,
-        size: size,
-        localAngle: impactLocalAngle,
-        radius: game.target.radius,
-      ),
-    );
+    // Defer heavy component additions and particle generation to next microtask/frame
+    // to keep the hit detection frame completely smooth and avoid multi-component rebuild spikes
+    final stuckSprite = sprite!;
+    final stuckSize = size.clone();
+    final targetRadius = game.target.radius;
+
+    Future.microtask(() {
+      if (!game.isMounted || game.isGameOver) return;
+      game.triggerHitParticles(preciseImpactPoint, particleColor, player);
+      game.triggerHitShake();
+      game.target.addStuckKnife(
+        StuckKnife(
+          player: player,
+          sprite: stuckSprite,
+          size: stuckSize,
+          localAngle: impactLocalAngle,
+          radius: targetRadius,
+        ),
+      );
+    });
   }
 
   int _r3() => KnifeThrowerGame._rng.nextInt(3) + 1;
