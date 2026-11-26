@@ -35,7 +35,17 @@ class OnlineGameService {
 
   // In-game callbacks
   void Function(int playerNumber, double targetAngle, int seq)? onOpponentThrow;
+  void Function(
+    int playerNumber,
+    bool isHit,
+    double impactLocalAngle,
+    int score,
+    int throwsMade,
+    bool isGameOver,
+    String winner,
+  )? onOpponentThrowResult;
   void Function(double angle, double directionSign)? onTargetSync;
+  void Function(String winner, int p1Score, int p2Score)? onGameOver;
   void Function(int seed)? onRematchStart;
   void Function()? onOpponentRematchReady;
   void Function()? onOpponentDisconnected;
@@ -160,6 +170,39 @@ class OnlineGameService {
       }
     });
 
+    socket.on('opponent_throw_result', (data) {
+      if (data is Map) {
+        final p = (data['playerNumber'] as num?)?.toInt();
+        final isHit = data['isHit'] == true;
+        final impactLocalAngle =
+            (data['impactLocalAngle'] as num?)?.toDouble() ?? 0.0;
+        final score = (data['score'] as num?)?.toInt() ?? 0;
+        final throwsMade = (data['throwsMade'] as num?)?.toInt() ?? 0;
+        final isGameOver = data['isGameOver'] == true;
+        final winner = data['winner']?.toString() ?? '';
+        if (p != null) {
+          onOpponentThrowResult?.call(
+            p,
+            isHit,
+            impactLocalAngle,
+            score,
+            throwsMade,
+            isGameOver,
+            winner,
+          );
+        }
+      }
+    });
+
+    socket.on('game_over', (data) {
+      if (data is Map) {
+        final winner = data['winner']?.toString() ?? 'TIE';
+        final p1Score = (data['p1Score'] as num?)?.toInt() ?? 0;
+        final p2Score = (data['p2Score'] as num?)?.toInt() ?? 0;
+        onGameOver?.call(winner, p1Score, p2Score);
+      }
+    });
+
     socket.on('target_sync', (data) {
       if (data is Map) {
         final angle = (data['angle'] as num?)?.toDouble() ?? 0.0;
@@ -245,6 +288,26 @@ class OnlineGameService {
     });
   }
 
+  void sendThrowResult({
+    required bool isHit,
+    required double impactLocalAngle,
+    required int score,
+    required int throwsMade,
+    required bool isGameOver,
+    required String winner,
+  }) {
+    if (_socket == null || !_socket!.connected || roomCode == null) return;
+    _socket!.emit('throw_result', {
+      'roomCode': roomCode,
+      'isHit': isHit,
+      'impactLocalAngle': impactLocalAngle,
+      'score': score,
+      'throwsMade': throwsMade,
+      'isGameOver': isGameOver,
+      'winner': winner,
+    });
+  }
+
   void sendTargetSync(double angle, double directionSign) {
     if (_socket == null ||
         !_socket!.connected ||
@@ -275,7 +338,9 @@ class OnlineGameService {
 
   void clearInGameCallbacks() {
     onOpponentThrow = null;
+    onOpponentThrowResult = null;
     onTargetSync = null;
+    onGameOver = null;
     onRematchStart = null;
     onOpponentRematchReady = null;
     onOpponentDisconnected = null;

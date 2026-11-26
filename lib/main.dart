@@ -608,9 +608,43 @@ class KnifeThrowerGame extends FlameGame
       onlineService!.onOpponentThrow = (playerNum, targetAngle, seq) {
         _handleRemoteThrow(playerNum, targetAngle, seq);
       };
+      onlineService!.onOpponentThrowResult =
+          (
+            playerNum,
+            isHit,
+            impactLocalAngle,
+            score,
+            throwsMade,
+            remoteGameOver,
+            winner,
+          ) {
+            _handleRemoteThrowResult(
+              playerNum,
+              isHit,
+              impactLocalAngle,
+              score,
+              throwsMade,
+              remoteGameOver,
+              winner,
+            );
+          };
       onlineService!.onTargetSync = (angle, dir) {
         if (!isTransitioning && !isGameOver) {
           target.applyRemoteSync(angle, dir);
+        }
+      };
+      onlineService!.onGameOver = (winner, p1Score, p2Score) {
+        SyncDebug.log('← game_over winner=$winner p1=$p1Score p2=$p2Score');
+        p1ScoreNotifier.value = p1Score;
+        p2ScoreNotifier.value = p2Score;
+        winnerNotifier.value = winner;
+        if (!isGameOver) {
+          isGameOver = true;
+          isCountingDown = false;
+          _idleTime = 0.0;
+          showTapHelperNotifier.value = false;
+          overlays.remove('countdown');
+          overlays.add('gameOver');
         }
       };
       onlineService!.onRematchStart = (newSeed) {
@@ -1001,6 +1035,42 @@ class KnifeThrowerGame extends FlameGame
     SyncDebug.log('← opponent_throw p$player angle=${targetAngle.toStringAsFixed(3)} seq=$seq');
     target.setCanonicalAngle(targetAngle);
     handleInput(player, isRemote: true);
+  }
+
+  void _handleRemoteThrowResult(
+    int player,
+    bool isHit,
+    double impactLocalAngle,
+    int score,
+    int throwsMade,
+    bool remoteGameOver,
+    String winner,
+  ) {
+    SyncDebug.log(
+      '← opponent_throw_result p$player hit=$isHit score=$score throws=$throwsMade gameOver=$remoteGameOver',
+    );
+    final knife = player == 1 ? p1Knife : p2Knife;
+    if (knife.isMoving && !knife.awaitingRemoteResult) {
+      knife.setPendingRemoteResult(
+        RemoteThrowResult(
+          isHit: isHit,
+          impactLocalAngle: impactLocalAngle,
+          score: score,
+          throwsMade: throwsMade,
+          isGameOver: remoteGameOver,
+          winner: winner,
+        ),
+      );
+    } else {
+      knife.applyRemoteResult(
+        isHit,
+        impactLocalAngle,
+        score,
+        throwsMade,
+        remoteGameOver,
+        winner,
+      );
+    }
   }
 
   void handleInput(int player, {bool isRemote = false}) {
@@ -1535,14 +1605,38 @@ class StuckKnife extends SpriteComponent
 // ─────────────────────────────────────────────
 //  FLYING / DEFLECTING KNIFE
 // ─────────────────────────────────────────────
+class RemoteThrowResult {
+  final bool isHit;
+  final double impactLocalAngle;
+  final int score;
+  final int throwsMade;
+  final bool isGameOver;
+  final String winner;
+
+  const RemoteThrowResult({
+    required this.isHit,
+    required this.impactLocalAngle,
+    required this.score,
+    required this.throwsMade,
+    required this.isGameOver,
+    required this.winner,
+  });
+}
+
 class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
   final int player;
   bool isThrowing = false;
   bool isMoving = false;
+  bool awaitingRemoteResult = false;
+  RemoteThrowResult? _pendingRemoteResult;
 
   final Vector2 _nextPos = Vector2.zero();
 
   Knife({required this.player}) : super(anchor: Anchor.center);
+
+  void setPendingRemoteResult(RemoteThrowResult result) {
+    _pendingRemoteResult = result;
+  }
 
   @override
   void onLoad() {
@@ -1563,6 +1657,8 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
   void resetPosition() {
     isThrowing = false;
     isMoving = false;
+    awaitingRemoteResult = false;
+    _pendingRemoteResult = null;
     final scale = game.scaleFactor;
     size = (player == 1 ? game.knifeSizeRed : game.knifeSizeBlue) * scale;
     if (game.isPlayerAtBottom(player)) {
@@ -1588,6 +1684,8 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
 
     _nextPos.setFrom(position);
     final bool atBottom = game.isPlayerAtBottom(player);
+    final bool isRemoteOnlineKnife =
+        game.isOnlineMode && player != game.localPlayerNumber;
     final direction = atBottom ? -1.0 : 1.0;
     final scale = game.scaleFactor;
     _nextPos.y += direction * GameConfig.knifeSpeed * scale * dt;
@@ -1596,17 +1694,145 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     final hitThreshold = game.target.radius + size.y * 0.5;
 
     if (distY < hitThreshold) {
-      _hitTarget();
+      if (isRemoteOnlineKnife) {
+        isMoving = false;
+        final pending = _pendingRemoteResult;
+        if (pending != null) {
+          _pendingRemoteResult = null;
+          applyRemoteResult(
+            pending.isHit,
+            pending.impactLocalAngle,
+            pending.score,
+            pending.throwsMade,
+            pending.isGameOver,
+            pending.winner,
+          );
+        } else {
+          awaitingRemoteResult = true;
+        }
+      } else {
+        _hitTarget();
+      }
     } else {
       bool missed = atBottom
           ? (_nextPos.y + size.y / 2 < 0)
           : (_nextPos.y - size.y / 2 > game.size.y);
 
       if (missed) {
-        game.recordMiss(player);
+        if (isRemoteOnlineKnife) {
+          isMoving = false;
+          final pending = _pendingRemoteResult;
+          if (pending != null) {
+            _pendingRemoteResult = null;
+            applyRemoteResult(
+              pending.isHit,
+              pending.impactLocalAngle,
+              pending.score,
+              pending.throwsMade,
+              pending.isGameOver,
+              pending.winner,
+            );
+          } else {
+            awaitingRemoteResult = true;
+          }
+        } else {
+          game.recordMiss(player);
+          _emitLocalResult(isHit: false, impactLocalAngle: 0.0);
+        }
       } else {
         position.y = _nextPos.y;
       }
+    }
+  }
+
+  void _emitLocalResult({
+    required bool isHit,
+    required double impactLocalAngle,
+  }) {
+    if (!game.isOnlineMode || player != game.localPlayerNumber) return;
+    final score = player == 1
+        ? game.p1ScoreNotifier.value
+        : game.p2ScoreNotifier.value;
+    final throwsMade = player == 1 ? game.p1ThrowsMade : game.p2ThrowsMade;
+    SyncDebug.log(
+      '→ throw_result p$player hit=$isHit score=$score throws=$throwsMade gameOver=${game.isGameOver}',
+    );
+    game.onlineService?.sendThrowResult(
+      isHit: isHit,
+      impactLocalAngle: impactLocalAngle,
+      score: score,
+      throwsMade: throwsMade,
+      isGameOver: game.isGameOver,
+      winner: game.winnerNotifier.value,
+    );
+  }
+
+  void applyRemoteResult(
+    bool isHit,
+    double impactLocalAngle,
+    int score,
+    int throwsMade,
+    bool remoteGameOver,
+    String winner,
+  ) {
+    awaitingRemoteResult = false;
+    isMoving = false;
+
+    if (isHit) {
+      game.playPoolSound('Arrow_Hit_${_r3()}.ogg');
+      game.recordHit(player);
+      // Authoritatively align score with thrower's score
+      if (player == 1) {
+        game.p1ScoreNotifier.value = score;
+      } else {
+        game.p2ScoreNotifier.value = score;
+      }
+
+      final targetCenter = game.target.position;
+      final impactWorldAngle = game.target.angle + impactLocalAngle;
+      final embeddedRadius =
+          game.target.radius - (size.y * GameConfig.embedDepth * 0.5);
+      final preciseImpactPoint = Vector2(
+        targetCenter.x + math.cos(impactWorldAngle) * embeddedRadius,
+        targetCenter.y + math.sin(impactWorldAngle) * embeddedRadius,
+      );
+      final particleColor = player == 1
+          ? const Color(0xFFD32F2F)
+          : const Color(0xFF1976D2);
+
+      final stuckSprite = sprite!;
+      final stuckSize = size.clone();
+      final targetRadius = game.target.radius;
+
+      Future.microtask(() {
+        if (!game.isMounted || game.isGameOver) return;
+        game.triggerHitParticles(preciseImpactPoint, particleColor, player);
+        game.triggerHitShake();
+        game.target.addStuckKnife(
+          StuckKnife(
+            player: player,
+            sprite: stuckSprite,
+            size: stuckSize,
+            localAngle: impactLocalAngle,
+            radius: targetRadius,
+          ),
+        );
+      });
+    } else {
+      game.playPoolSound('Metal_Clashed.ogg');
+      final targetCenter = game.target.position;
+      final impactWorldAngle = game.target.angle + impactLocalAngle;
+      final clashPoint = Vector2(
+        targetCenter.x + math.cos(impactWorldAngle) * game.target.radius,
+        targetCenter.y + math.sin(impactWorldAngle) * game.target.radius,
+      );
+      Future.microtask(() => game.triggerClashParticles(clashPoint, player));
+      game.recordMiss(player);
+    }
+
+    if (remoteGameOver && !game.isGameOver) {
+      game.winnerNotifier.value = winner;
+      game.gameOver();
     }
   }
 
@@ -1641,6 +1867,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
 
         // Record a miss
         game.recordMiss(player);
+        _emitLocalResult(isHit: false, impactLocalAngle: impactLocalAngle);
         return;
       }
     }
@@ -1650,6 +1877,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
 
     // Record hit immediately to trigger cracking sound/visuals without delay
     game.recordHit(player);
+    _emitLocalResult(isHit: true, impactLocalAngle: impactLocalAngle);
 
     final targetCenter = game.target.position;
     // Calculate the actual impact point based on the target's current rotation

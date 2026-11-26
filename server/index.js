@@ -71,6 +71,9 @@ io.on('connection', (socket) => {
       throwSeq: 0,
       p1ThrowsMade: 0,
       p2ThrowsMade: 0,
+      p1Score: 0,
+      p2Score: 0,
+      gameEnded: false,
       gameStarted: false,
     });
     socket.join(roomCode);
@@ -119,6 +122,9 @@ io.on('connection', (socket) => {
     room.throwSeq = 0;
     room.p1ThrowsMade = 0;
     room.p2ThrowsMade = 0;
+    room.p1Score = 0;
+    room.p2Score = 0;
+    room.gameEnded = false;
     room.gameStarted = true;
 
     console.log(`[room joined] ${rawCode} by ${socket.id}`);
@@ -156,6 +162,53 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('throw_result', (data) => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    const playerNumber = socket.data.playerNumber;
+    const isHit = Boolean(data?.isHit);
+    const impactLocalAngle = Number(data?.impactLocalAngle ?? 0);
+    const score = Number(data?.score ?? 0);
+    const throwsMade = Number(data?.throwsMade ?? 0);
+    const isGameOver = Boolean(data?.isGameOver);
+    const winner = data?.winner ? String(data.winner) : '';
+
+    if (playerNumber === 1) {
+      room.p1Score = score;
+    } else if (playerNumber === 2) {
+      room.p2Score = score;
+    }
+
+    socket.to(roomCode).emit('opponent_throw_result', {
+      playerNumber,
+      isHit,
+      impactLocalAngle,
+      score,
+      throwsMade,
+      isGameOver,
+      winner,
+    });
+
+    if (isGameOver && !room.gameEnded) {
+      room.gameEnded = true;
+      let resolvedWinner = winner;
+      if (!resolvedWinner) {
+        if (room.p1Score > room.p2Score) resolvedWinner = 'RED';
+        else if (room.p2Score > room.p1Score) resolvedWinner = 'BLUE';
+        else resolvedWinner = 'TIE';
+      }
+      console.log(`[game_over] room=${roomCode} winner=${resolvedWinner} p1=${room.p1Score} p2=${room.p2Score}`);
+      io.to(roomCode).emit('game_over', {
+        winner: resolvedWinner,
+        p1Score: room.p1Score,
+        p2Score: room.p2Score,
+      });
+    }
+  });
+
   socket.on('target_sync', (data) => {
     const roomCode = socket.data.roomCode;
     if (!roomCode || socket.data.playerNumber !== 1) return;
@@ -179,6 +232,9 @@ io.on('connection', (socket) => {
       room.throwSeq = 0;
       room.p1ThrowsMade = 0;
       room.p2ThrowsMade = 0;
+      room.p1Score = 0;
+      room.p2Score = 0;
+      room.gameEnded = false;
       io.to(roomCode).emit('rematch_start', { seed: room.seed });
     } else {
       socket.to(roomCode).emit('opponent_rematch_ready');

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -182,6 +183,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1628),
+      resizeToAvoidBottomInset: false,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
@@ -228,7 +230,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
-                            'ONLINE MULTIPLAYER',
+                            'ONLINE',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13 * scale,
@@ -284,34 +286,15 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           onTap: _isBusy ? null : _handleCreateRoom,
         ),
         SizedBox(height: 28 * scale),
-        Row(
-          children: [
-            Expanded(
-              child: Divider(
-                color: Colors.white.withValues(alpha: 0.15),
-                thickness: 1,
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12 * scale),
-              child: Text(
-                'OR JOIN',
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontFamily: 'Montserrat',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12 * scale,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Divider(
-                color: Colors.white.withValues(alpha: 0.15),
-                thickness: 1,
-              ),
-            ),
-          ],
+        Text(
+          'OR JOIN',
+          style: TextStyle(
+            color: Colors.white54,
+            fontFamily: 'Montserrat',
+            fontWeight: FontWeight.w700,
+            fontSize: 12 * scale,
+            letterSpacing: 1.0,
+          ),
         ),
         SizedBox(height: 20 * scale),
         SizedBox(
@@ -451,7 +434,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
                   SizedBox(width: 10 * scale),
                   Icon(
                     Icons.copy_rounded,
-                    color: const Color(0xFF2CDFA2),
+                    color: Colors.white,
                     size: 18 * scale,
                   ),
                 ],
@@ -459,25 +442,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
             ),
           ),
           SizedBox(height: 20 * scale),
-          SizedBox(
-            width: 24 * scale,
-            height: 24 * scale,
-            child: const CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: Color(0xFF2CDFA2),
-            ),
-          ),
-          SizedBox(height: 12 * scale),
-          Text(
-            'Waiting for friend to join...',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white70,
-              fontFamily: 'Montserrat',
-              fontWeight: FontWeight.w700,
-              fontSize: 13 * scale,
-            ),
-          ),
+          _AnimatedWaitingText(scale: scale),
           SizedBox(height: 20 * scale),
           GameButton(
             label: 'CANCEL',
@@ -490,6 +455,56 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AnimatedWaitingText extends StatefulWidget {
+  final double scale;
+  const _AnimatedWaitingText({required this.scale});
+
+  @override
+  State<_AnimatedWaitingText> createState() => _AnimatedWaitingTextState();
+}
+
+class _AnimatedWaitingTextState extends State<_AnimatedWaitingText> {
+  Timer? _timer;
+  int _dotCount = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 450), (_) {
+      if (!mounted) return;
+      setState(() {
+        _dotCount = (_dotCount % 3) + 1;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      color: Colors.white70,
+      fontFamily: 'Montserrat',
+      fontWeight: FontWeight.w700,
+      fontSize: 13 * widget.scale,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Waiting for friend to join', style: style),
+        SizedBox(
+          width: 16 * widget.scale,
+          child: Text('.' * _dotCount, style: style),
+        ),
+      ],
     );
   }
 }
