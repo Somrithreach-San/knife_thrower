@@ -41,7 +41,27 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
         });
       }
     });
+    _onlineService.connectionState.addListener(_onConnectionStateChanged);
     _initService();
+  }
+
+  void _onConnectionStateChanged() {
+    if (!mounted || _navigatedToGame) return;
+    if (_isWaitingForFriend &&
+        _onlineService.connectionState.value ==
+            OnlineConnectionState.disconnected) {
+      setState(() {
+        _isWaitingForFriend = false;
+        _isCreatingRoom = false;
+        _isJoiningRoom = false;
+        _createdRoomCode = null;
+      });
+      GameToast.show(
+        context,
+        'Connection lost. Please try again.',
+        type: GameToastType.error,
+      );
+    }
   }
 
   Future<void> _initService() async {
@@ -102,6 +122,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
 
   @override
   void dispose() {
+    _onlineService.connectionState.removeListener(_onConnectionStateChanged);
     _onlineService.dispose();
     _roomCodeController.dispose();
     super.dispose();

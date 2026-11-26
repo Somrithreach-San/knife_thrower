@@ -34,7 +34,7 @@ class OnlineGameService {
   void Function(String error)? onRoomError;
 
   // In-game callbacks
-  void Function(int playerNumber, double targetAngle)? onOpponentThrow;
+  void Function(int playerNumber, double targetAngle, int seq)? onOpponentThrow;
   void Function(double angle, double directionSign)? onTargetSync;
   void Function(int seed)? onRematchStart;
   void Function()? onOpponentRematchReady;
@@ -152,8 +152,10 @@ class OnlineGameService {
       if (data is Map) {
         final p = (data['playerNumber'] as num?)?.toInt();
         final angle = (data['targetAngle'] as num?)?.toDouble() ?? 0.0;
+        // seq defaults to 0 when talking to an older server build
+        final seq = (data['seq'] as num?)?.toInt() ?? 0;
         if (p != null) {
-          onOpponentThrow?.call(p, angle);
+          onOpponentThrow?.call(p, angle, seq);
         }
       }
     });

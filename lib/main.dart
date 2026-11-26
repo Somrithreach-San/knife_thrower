@@ -20,6 +20,20 @@ import 'mode_selection_screen.dart';
 import 'widgets/app_loading_indicator.dart';
 
 // ─────────────────────────────────────────────
+//  SYNC DEBUG
+//  Set enabled = true temporarily to trace online events in the Flutter
+//  debug console. Always false in production — zero overhead when off.
+// ─────────────────────────────────────────────
+class SyncDebug {
+  static const bool enabled = false; // ← flip to true to enable logging
+
+  // ignore: avoid_print
+  static void log(String msg) {
+    if (enabled) debugPrint('[SYNC] $msg');
+  }
+}
+
+// ─────────────────────────────────────────────
 //  CONSTANTS
 // ─────────────────────────────────────────────
 class GameConfig {
@@ -391,6 +405,11 @@ class KnifeThrowerGame extends FlameGame
   late Knife p1Knife;
   late Knife p2Knife;
 
+  // ── Online sync state ─────────────────────────────────────────────────────
+  // Tracks the last processed remote-throw sequence number so out-of-order
+  // network packets are discarded rather than applied to the wrong throw.
+  int _lastRemoteThrowSeq = 0;
+
   // Screen shake variables for satisfying hit feedback
   double _shakeIntensity = 0.0;
   double _shakeDuration = 0.0;
@@ -456,6 +475,18 @@ class KnifeThrowerGame extends FlameGame
   // Cached scaling factor — updated only in onGameResize()
   double _cachedScaleFactor = 1.0;
   double get scaleFactor => _cachedScaleFactor;
+
+  /// Whether [player] (1 = Red, 2 = Blue) is rendered at the bottom of this
+  /// device's screen.
+  /// - Local / Bot modes: Player 1 is always bottom, Player 2 is always top.
+  /// - Online mode: the local player is always at the bottom, opponent at top.
+  bool isPlayerAtBottom(int player) =>
+      isOnlineMode ? (player == localPlayerNumber) : (player == 1);
+
+  /// Visual rotation offset (in radians) applied to the target so that
+  /// Player 2's online view is rotated 180° relative to canonical world coords.
+  double get viewRotationOffset =>
+      (isOnlineMode && localPlayerNumber == 2) ? math.pi : 0.0;
 
   String _getFilenameFromAssetPath(String path) {
     return path.split('/').last;
@@ -574,8 +605,8 @@ class KnifeThrowerGame extends FlameGame
     }
 
     if (isOnlineMode && onlineService != null) {
-      onlineService!.onOpponentThrow = (playerNum, targetAngle) {
-        _handleRemoteThrow(playerNum, targetAngle);
+      onlineService!.onOpponentThrow = (playerNum, targetAngle, seq) {
+        _handleRemoteThrow(playerNum, targetAngle, seq);
       };
       onlineService!.onTargetSync = (angle, dir) {
         if (!isTransitioning && !isGameOver) {
@@ -588,10 +619,11 @@ class KnifeThrowerGame extends FlameGame
         restartGame();
       };
       onlineService!.onOpponentDisconnected = () {
-        if (!isGameOver) {
+        if (!overlays.isActive('opponentDisconnected')) {
           isGameOver = true;
           isCountingDown = false;
           overlays.remove('countdown');
+          overlays.remove('gameOver');
           overlays.add('opponentDisconnected');
         }
       };
@@ -744,6 +776,7 @@ class KnifeThrowerGame extends FlameGame
   }
 
   void recordHit(int player) {
+    if (isGameOver) return;
     if (player == 1) {
       p1ScoreNotifier.value++;
       p1ThrowResults.value[p1ThrowsMade] = 1; // hit
@@ -783,6 +816,7 @@ class KnifeThrowerGame extends FlameGame
   }
 
   void recordMiss(int player) {
+    if (isGameOver) return;
     if (player == 1) {
       p1ThrowResults.value[p1ThrowsMade] = 0; // miss
       // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
@@ -830,7 +864,7 @@ class KnifeThrowerGame extends FlameGame
     // Wait for 1.5s before starting the transition to let the final action settle
     // The target will continue spinning during this pause as rotation is in Target.update()
     await Future.delayed(const Duration(milliseconds: 1500));
-    if (isGameOver) return;
+    if (!isMounted || isGameOver) return;
 
     final screenWidth = size.x;
     final originalTargetY = target.position.y;
@@ -949,9 +983,23 @@ class KnifeThrowerGame extends FlameGame
     _activeDragStart.remove(pointerId);
   }
 
-  void _handleRemoteThrow(int player, double targetAngle) {
-    if (isGameOver || isTransitioning || isCountingDown) return;
-    target.angle = targetAngle;
+  void _handleRemoteThrow(int player, double targetAngle, int seq) {
+    // Discard out-of-order packets — seq must always advance
+    if (seq > 0 && seq <= _lastRemoteThrowSeq) {
+      SyncDebug.log('⚠ Discarded stale opponent_throw seq=$seq (last=$_lastRemoteThrowSeq)');
+      return;
+    }
+    _lastRemoteThrowSeq = seq;
+
+    if (isGameOver || isTransitioning || isCountingDown) {
+      SyncDebug.log('⚠ Dropped remote throw (game not accepting input): gameOver=$isGameOver transitioning=$isTransitioning counting=$isCountingDown');
+      return;
+    }
+
+    // Snap canonical target angle BEFORE triggering the throw so collision math
+    // uses the exact angle the sender computed at throw time.
+    SyncDebug.log('← opponent_throw p$player angle=${targetAngle.toStringAsFixed(3)} seq=$seq');
+    target.setCanonicalAngle(targetAngle);
     handleInput(player, isRemote: true);
   }
 
@@ -987,7 +1035,8 @@ class KnifeThrowerGame extends FlameGame
           !p1Knife.isThrowing &&
           !p1Knife.isMoving) {
         if (isOnlineMode && !isRemote) {
-          onlineService?.sendThrow(target.angle);
+          SyncDebug.log('→ throw_knife p1 angle=${target.canonicalAngle.toStringAsFixed(3)}');
+          onlineService?.sendThrow(target.canonicalAngle);
         }
         p1Knife.throwKnife();
       }
@@ -996,7 +1045,8 @@ class KnifeThrowerGame extends FlameGame
           !p2Knife.isThrowing &&
           !p2Knife.isMoving) {
         if (isOnlineMode && !isRemote) {
-          onlineService?.sendThrow(target.angle);
+          SyncDebug.log('→ throw_knife p2 angle=${target.canonicalAngle.toStringAsFixed(3)}');
+          onlineService?.sendThrow(target.canonicalAngle);
         }
         p2Knife.throwKnife();
       }
@@ -1011,6 +1061,7 @@ class KnifeThrowerGame extends FlameGame
     isTransitioning = false;
     _hasShownTapHelperThisGame = false;
     _idleTime = 0.0;
+    _lastRemoteThrowSeq = 0; // Reset seq counter for fresh match
     if (showTapHelperNotifier.value) {
       showTapHelperNotifier.value = false;
     }
@@ -1053,7 +1104,7 @@ class KnifeThrowerGame extends FlameGame
           lifespan: 0.4,
           generator: (i) {
             final spreadAngle =
-                (player == 1 ? math.pi / 2 : -math.pi / 2) +
+                (isPlayerAtBottom(player) ? math.pi / 2 : -math.pi / 2) +
                 (_rng.nextDouble() - 0.5) *
                     (math.pi / 2); // Wider spread: 90 degrees instead of 36
             final speed =
@@ -1090,9 +1141,10 @@ class KnifeThrowerGame extends FlameGame
               1, // Spawning 1 broken blade piece (the original knife is removed)
           lifespan: 0.8,
           generator: (i) {
-            // Player 1 (Red, bottom): angles between pi/4 and 3pi/4 (bounces down)
-            // Player 2 (Blue, top): angles between -pi/4 and -3pi/4 (bounces up)
-            final angle = player == 1
+            final bool atBottom = isPlayerAtBottom(player);
+            // Bottom side: angles between pi/4 and 3pi/4 (bounces down)
+            // Top side: angles between -pi/4 and -3pi/4 (bounces up)
+            final angle = atBottom
                 ? (math.pi / 4 + _rng.nextDouble() * math.pi / 2)
                 : (-math.pi / 4 - _rng.nextDouble() * math.pi / 2);
 
@@ -1102,11 +1154,11 @@ class KnifeThrowerGame extends FlameGame
             return AcceleratedParticle(
               position: clashPoint.clone(),
               speed: Vector2(math.cos(angle) * speed, math.sin(angle) * speed),
-              // Gravity should pull red DOWN (positive Y) and blue UP (negative Y)
-              acceleration: Vector2(0, (player == 1 ? 1500 : -1500) * scale),
+              // Gravity pulls bottom player DOWN (+Y) and top player UP (-Y)
+              acceleration: Vector2(0, (atBottom ? 1500 : -1500) * scale),
               child: RotatingParticle(
-                from: player == 2 ? math.pi : 0, // Initial flip for blue side
-                to: rotationSpeed + (player == 2 ? math.pi : 0),
+                from: atBottom ? 0 : math.pi, // Initial flip for top side
+                to: rotationSpeed + (atBottom ? 0 : math.pi),
                 child: SpriteParticle(
                   sprite: brokenSprite,
                   size:
@@ -1186,10 +1238,13 @@ class KnifeThrowerGame extends FlameGame
 
     // Track user idle time for "Tap the screen" hand gesture GIF helper (>10s)
     // Only show once per game unless a new game is restarted
-    final bool canHumanThrow = isBotMode
-        ? (p1ThrowsMade < GameConfig.knivesPerRound)
-        : (p1ThrowsMade < GameConfig.knivesPerRound ||
-              p2ThrowsMade < GameConfig.knivesPerRound);
+    final bool canHumanThrow = isOnlineMode
+        ? ((localPlayerNumber == 1 ? p1ThrowsMade : p2ThrowsMade) <
+              GameConfig.knivesPerRound)
+        : (isBotMode
+              ? (p1ThrowsMade < GameConfig.knivesPerRound)
+              : (p1ThrowsMade < GameConfig.knivesPerRound ||
+                    p2ThrowsMade < GameConfig.knivesPerRound));
 
     if (!_hasShownTapHelperThisGame &&
         canHumanThrow &&
@@ -1261,10 +1316,22 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
   double _behaviorTimer = 0.0;
   double _nextChangeInterval = 3.0;
   double _directionSign = 1.0;
+  /// Canonical target rotation in world coordinates (shared by both clients).
+  /// Visual [angle] adds [KnifeThrowerGame.viewRotationOffset] (pi for online P2).
+  double canonicalAngle = 0.0;
   late SpriteComponent _visual;
   int stuckKnifeCount = 0;
   int roundHits =
       0; // Track only player-thrown knives in current round for cracking logic
+
+  // ── Behavior RNG is intentionally SEPARATE from _matchRng ────────────────
+  // _matchRng must only be consumed by _addPreThrownKnivesToTarget so both
+  // clients consume it in identical order (placement is seeded identically).
+  // P2 never runs the behavior-change block, so if we used _matchRng here,
+  // P1 would call nextDouble() for direction flips that P2 never calls —
+  // causing _matchRng to diverge after the first direction change and making
+  // pre-thrown knife placement desync on subsequent rounds.
+  late math.Random _behaviorRng;
 
   // Cached list of stuck knives — avoids whereType iteration overhead
   final List<StuckKnife> _stuckKnives = [];
@@ -1292,6 +1359,13 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     position = game.size / 2;
     size = Vector2.all(_cachedRadius * 2);
 
+    // Initialize behavior RNG from match seed so it's deterministic,
+    // but offset by 1 so it doesn't collide with _matchRng's first value.
+    // Both clients derive the same _behaviorRng sequence since they share the seed.
+    _behaviorRng = game.matchSeed != null
+        ? math.Random(game.matchSeed! ^ 0xDEAD)
+        : math.Random();
+
     _visual = SpriteComponent(
       sprite: game.targetSprite,
       size: size,
@@ -1302,6 +1376,8 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     // Apply extra scale to normal target
     _visual.scale = Vector2.all(GameConfig.baseTargetExtraScale);
     add(_visual);
+    canonicalAngle = 0.0;
+    angle = game.viewRotationOffset;
     _generateNextBehaviorInterval();
   }
 
@@ -1318,7 +1394,8 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
   }
 
   void resetBehavior() {
-    angle = 0;
+    canonicalAngle = 0.0;
+    angle = game.viewRotationOffset;
     _directionSign = 1.0;
     _behaviorTimer = 0.0;
     stuckKnifeCount = 0;
@@ -1326,25 +1403,39 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     _stuckKnives.clear();
     _visual.sprite = game.targetSprite;
     _visual.scale = Vector2.all(1.0);
+    // Re-seed behavior RNG on rematch so both clients stay in sync
+    if (game.matchSeed != null) {
+      _behaviorRng = math.Random(game.matchSeed! ^ 0xDEAD);
+    }
     _generateNextBehaviorInterval();
   }
 
   void _generateNextBehaviorInterval() {
-    _nextChangeInterval = 1.2 + game._matchRng.nextDouble() * 2.0;
+    // Uses _behaviorRng (NOT _matchRng) so placement RNG is never consumed here.
+    // P2 also calls this from onLoad/resetBehavior, keeping sequences identical.
+    _nextChangeInterval = 1.2 + _behaviorRng.nextDouble() * 2.0;
+  }
+
+  void setCanonicalAngle(double value) {
+    canonicalAngle = value % (2 * math.pi);
+    angle = (canonicalAngle + game.viewRotationOffset) % (2 * math.pi);
   }
 
   void applyRemoteSync(double remoteAngle, double remoteDirectionSign) {
     _directionSign = remoteDirectionSign;
     // Shortest angular delta in [-pi, pi] to prevent 0.5s micro-stutters from jitter
-    double diff = (remoteAngle - angle) % (2 * math.pi);
+    double diff = (remoteAngle - canonicalAngle) % (2 * math.pi);
     if (diff > math.pi) diff -= 2 * math.pi;
     if (diff < -math.pi) diff += 2 * math.pi;
 
     if (diff.abs() > 0.45) {
-      angle = remoteAngle;
+      canonicalAngle = remoteAngle; // Large gap → hard snap
     } else if (diff.abs() > 0.03) {
-      angle = (angle + diff * 0.35) % (2 * math.pi);
+      canonicalAngle =
+          (canonicalAngle + diff * 0.35) % (2 * math.pi); // Small gap → smooth lerp
     }
+    angle = (canonicalAngle + game.viewRotationOffset) % (2 * math.pi);
+    SyncDebug.log('↔ target_sync angle=${remoteAngle.toStringAsFixed(3)} dir=$remoteDirectionSign diff=${diff.toStringAsFixed(3)}');
   }
 
   double _syncAccumulator = 0.0;
@@ -1364,18 +1455,22 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     super.update(dt);
     if (game.isGameOver || game.isCountingDown) return;
 
-    // In online mode, host (Player 1) drives target direction changes and syncs to guest
+    // In online mode, only the host (P1) drives direction changes.
+    // P2's direction is set entirely via applyRemoteSync() — it never runs
+    // this block, so _behaviorRng is NOT consumed on P2 during gameplay.
+    // Both clients consume _behaviorRng only in onLoad + resetBehavior,
+    // keeping the sequences identical across the match.
     if (!game.isOnlineMode || game.localPlayerNumber == 1) {
       _behaviorTimer += dt;
       if (_behaviorTimer >= _nextChangeInterval) {
         _behaviorTimer = 0.0;
-        _generateNextBehaviorInterval();
+        _generateNextBehaviorInterval(); // uses _behaviorRng
 
-        if (game._matchRng.nextDouble() < 0.75) {
+        if (_behaviorRng.nextDouble() < 0.75) {
           _directionSign *= -1.0;
         }
         if (game.isOnlineMode && game.localPlayerNumber == 1) {
-          game.onlineService?.sendTargetSync(angle, _directionSign);
+          game.onlineService?.sendTargetSync(canonicalAngle, _directionSign);
           _syncAccumulator = 0.0;
         }
       }
@@ -1384,13 +1479,14 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
         _syncAccumulator += dt;
         if (_syncAccumulator >= 0.5) {
           _syncAccumulator = 0.0;
-          game.onlineService?.sendTargetSync(angle, _directionSign);
+          game.onlineService?.sendTargetSync(canonicalAngle, _directionSign);
         }
       }
     }
 
     final computedSpeed = GameConfig.baseTargetSpeed * _directionSign;
-    angle = (angle + computedSpeed * dt) % (2 * math.pi);
+    canonicalAngle = (canonicalAngle + computedSpeed * dt) % (2 * math.pi);
+    angle = (canonicalAngle + game.viewRotationOffset) % (2 * math.pi);
   }
 }
 
@@ -1469,7 +1565,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     isMoving = false;
     final scale = game.scaleFactor;
     size = (player == 1 ? game.knifeSizeRed : game.knifeSizeBlue) * scale;
-    if (player == 1) {
+    if (game.isPlayerAtBottom(player)) {
       position = Vector2(game.size.x / 2, game.size.y - 120 * scale);
       angle = 0;
     } else {
@@ -1488,10 +1584,11 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
   void update(double dt) {
     super.update(dt);
 
-    if (!isMoving) return;
+    if (!isMoving || game.isGameOver) return;
 
     _nextPos.setFrom(position);
-    final direction = player == 1 ? -1.0 : 1.0;
+    final bool atBottom = game.isPlayerAtBottom(player);
+    final direction = atBottom ? -1.0 : 1.0;
     final scale = game.scaleFactor;
     _nextPos.y += direction * GameConfig.knifeSpeed * scale * dt;
 
@@ -1501,7 +1598,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     if (distY < hitThreshold) {
       _hitTarget();
     } else {
-      bool missed = player == 1
+      bool missed = atBottom
           ? (_nextPos.y + size.y / 2 < 0)
           : (_nextPos.y - size.y / 2 > game.size.y);
 
@@ -1516,8 +1613,10 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
   void _hitTarget() {
     isMoving = false;
 
+    // Canonical world angle: Player 1 (Red) always hits +pi/2, Player 2 (Blue) -pi/2
     final worldAngle = player == 1 ? (math.pi / 2) : (-math.pi / 2);
-    final impactLocalAngle = normalizeAngle(worldAngle - game.target.angle);
+    final impactLocalAngle =
+        normalizeAngle(worldAngle - game.target.canonicalAngle);
 
     // Check for collision with already stuck knives (uses cached list)
     for (final stuck in game.target.stuckKnives) {
@@ -1669,21 +1768,40 @@ class HudOverlay extends StatelessWidget {
                 screenHeight / GameConfig.baseHeight,
               );
 
+        // Local/Bot: P1 (Red) at bottom, P2 (Blue) at top.
+        // Online: local player at bottom, opponent at top, keeping fixed Red/Blue colors.
+        final int bottomPlayer =
+            game.isOnlineMode ? game.localPlayerNumber : 1;
+        final int topPlayer = bottomPlayer == 1 ? 2 : 1;
+
+        final bottomResults =
+            bottomPlayer == 1 ? game.p1ThrowResults : game.p2ThrowResults;
+        final topResults =
+            topPlayer == 1 ? game.p1ThrowResults : game.p2ThrowResults;
+        final bottomColor =
+            bottomPlayer == 1 ? Colors.redAccent : Colors.blueAccent;
+        final topColor =
+            topPlayer == 1 ? Colors.redAccent : Colors.blueAccent;
+        final bottomScore =
+            bottomPlayer == 1 ? game.p1ScoreNotifier : game.p2ScoreNotifier;
+        final topScore =
+            topPlayer == 1 ? game.p1ScoreNotifier : game.p2ScoreNotifier;
+
         return SizedBox(
           width: screenWidth,
           height: screenHeight,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Blue player (top) dots
+              // Top player dots (opponent in online, P2 in local/bot)
               if (isWidescreen)
                 Positioned(
                   right: 48 * scale,
                   top: 36 * scale,
                   child: SafeArea(
                     child: _DotIndicator(
-                      notifier: game.p2ThrowResults,
-                      baseColor: Colors.blueAccent,
+                      notifier: topResults,
+                      baseColor: topColor,
                       isRow: true,
                       scale: scale,
                     ),
@@ -1699,8 +1817,8 @@ class HudOverlay extends StatelessWidget {
                     child: Padding(
                       padding: EdgeInsets.only(top: 20 * scale),
                       child: _DotIndicator(
-                        notifier: game.p2ThrowResults,
-                        baseColor: Colors.blueAccent,
+                        notifier: topResults,
+                        baseColor: topColor,
                         isRow: false,
                         scale: scale,
                       ),
@@ -1708,15 +1826,15 @@ class HudOverlay extends StatelessWidget {
                   ),
                 ),
 
-              // Red player (bottom) dots
+              // Bottom player dots (local player in online, P1 in local/bot)
               if (isWidescreen)
                 Positioned(
                   left: 48 * scale,
                   bottom: 36 * scale,
                   child: SafeArea(
                     child: _DotIndicator(
-                      notifier: game.p1ThrowResults,
-                      baseColor: Colors.redAccent,
+                      notifier: bottomResults,
+                      baseColor: bottomColor,
                       isRow: true,
                       scale: scale,
                     ),
@@ -1734,8 +1852,8 @@ class HudOverlay extends StatelessWidget {
                       child: Padding(
                         padding: EdgeInsets.only(bottom: 20 * scale),
                         child: _DotIndicator(
-                          notifier: game.p1ThrowResults,
-                          baseColor: Colors.redAccent,
+                          notifier: bottomResults,
+                          baseColor: bottomColor,
                           isRow: false,
                           scale: scale,
                         ),
@@ -1771,14 +1889,14 @@ class HudOverlay extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 ValueListenableBuilder<int>(
-                                  valueListenable: game.p1ScoreNotifier,
+                                  valueListenable: bottomScore,
                                   builder: (_, v, _) => Text(
                                     '$v',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: 'Montserrat',
                                       fontSize: 18,
                                       fontWeight: FontWeight.w900,
-                                      color: Colors.redAccent,
+                                      color: bottomColor,
                                     ),
                                   ),
                                 ),
@@ -1795,14 +1913,14 @@ class HudOverlay extends StatelessWidget {
                                   ),
                                 ),
                                 ValueListenableBuilder<int>(
-                                  valueListenable: game.p2ScoreNotifier,
+                                  valueListenable: topScore,
                                   builder: (_, v, _) => Text(
                                     '$v',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: 'Montserrat',
                                       fontSize: 18,
                                       fontWeight: FontWeight.w900,
-                                      color: Colors.blueAccent,
+                                      color: topColor,
                                     ),
                                   ),
                                 ),
@@ -1836,16 +1954,13 @@ class HudOverlay extends StatelessWidget {
                 builder: (context, showHelper, _) {
                   if (!showHelper) return const SizedBox.shrink();
                   final gifSize = 140.0 * scale;
-                  final showP1 =
-                      !game.isOnlineMode || game.localPlayerNumber == 1;
-                  final showP2 = game.isOnlineMode
-                      ? game.localPlayerNumber == 2
-                      : !game.isBotMode;
+                  const bool showBottom = true;
+                  final bool showTop = !game.isOnlineMode && !game.isBotMode;
                   return Stack(
                     fit: StackFit.expand,
                     children: [
-                      // Player 1 (Bottom / Red) Tap Helper
-                      if (showP1)
+                      // Bottom player Tap Helper (local player in online, P1 in local/bot)
+                      if (showBottom)
                         Positioned(
                           left: (screenWidth / 2) + 20 * scale,
                           bottom: 45 * scale,
@@ -1858,8 +1973,8 @@ class HudOverlay extends StatelessWidget {
                             ),
                           ),
                         ),
-                      // Player 2 (Top / Blue) Tap Helper
-                      if (showP2)
+                      // Top player Tap Helper (local 2-player mode only)
+                      if (showTop)
                         Positioned(
                           right: (screenWidth / 2) + 20 * scale,
                           top: 45 * scale,
@@ -1893,15 +2008,11 @@ class HudOverlay extends StatelessWidget {
 
     String? topAsset;
     bool rotateTop = false;
-    String? bottomAsset;
+    final String bottomAsset;
 
     if (game.isOnlineMode) {
-      // Online: show You indicator only on the local player's side
-      if (game.localPlayerNumber == 1) {
-        bottomAsset = 'assets/images/You_Indicator.png';
-      } else {
-        topAsset = 'assets/images/You_Indicator.png';
-      }
+      // Online: local player is always at the bottom on their own device
+      bottomAsset = 'assets/images/You_Indicator.png';
     } else if (game.isBotMode) {
       // Bot mode: only show You for the human player, nothing for bot
       bottomAsset = 'assets/images/You_Indicator.png';
@@ -1932,22 +2043,21 @@ class HudOverlay extends StatelessWidget {
             ),
           ),
         ),
-      if (bottomAsset != null)
-        Positioned(
-          right: hPad,
-          bottom: vPad,
-          child: SafeArea(
-            top: false,
-            child: IgnorePointer(
-              child: Image.asset(
-                bottomAsset,
-                width: iconSize,
-                height: iconSize,
-                fit: BoxFit.contain,
-              ),
+      Positioned(
+        right: hPad,
+        bottom: vPad,
+        child: SafeArea(
+          top: false,
+          child: IgnorePointer(
+            child: Image.asset(
+              bottomAsset,
+              width: iconSize,
+              height: iconSize,
+              fit: BoxFit.contain,
             ),
           ),
         ),
+      ),
     ];
   }
 }
@@ -2288,12 +2398,16 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                     children: [
                       Column(
                         children: [
-                          // Top half (Blue player)
+                          // Top half (opponent in online, Blue P2 in local/bot)
                           Expanded(
                             child: RotatedBox(
-                              quarterTurns: 2,
+                              quarterTurns: widget.game.isOnlineMode ? 0 : 2,
                               child: _GameOverPlayerSection(
-                                player: 2,
+                                player: widget.game.isOnlineMode
+                                    ? (widget.game.localPlayerNumber == 1
+                                          ? 2
+                                          : 1)
+                                    : 2,
                                 winner: winner,
                                 canRestart: _canRestart,
                                 promptText: widget.game.isOnlineMode
@@ -2302,10 +2416,12 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                               ),
                             ),
                           ),
-                          // Bottom half (Red player)
+                          // Bottom half (local player in online, Red P1 in local/bot)
                           Expanded(
                             child: _GameOverPlayerSection(
-                              player: 1,
+                              player: widget.game.isOnlineMode
+                                  ? widget.game.localPlayerNumber
+                                  : 1,
                               winner: winner,
                               canRestart: _canRestart,
                               promptText: widget.game.isOnlineMode

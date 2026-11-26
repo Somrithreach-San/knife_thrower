@@ -13,7 +13,15 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Active rooms: roomCode -> { players: [{ id, playerNumber }], seed, rematchVotes: Set }
+// Active rooms: roomCode -> {
+//   players: [{ id, playerNumber }],
+//   seed,
+//   rematchVotes: Set,
+//   throwSeq: number,          // monotonically increasing throw counter
+//   p1ThrowsMade: number,       // server-authoritative throw counts
+//   p2ThrowsMade: number,
+//   gameStarted: boolean,       // prevent duplicate game_start
+// }
 const rooms = new Map();
 
 function generateRoomCode() {
@@ -35,13 +43,35 @@ app.get('/health', (_req, res) => {
 io.on('connection', (socket) => {
   console.log(`[connect] ${socket.id}`);
 
+  const handleLeave = () => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (room) {
+      room.players = room.players.filter((p) => p.id !== socket.id);
+      socket.to(roomCode).emit('opponent_disconnected');
+      if (room.players.length === 0) {
+        rooms.delete(roomCode);
+        console.log(`[room closed] ${roomCode}`);
+      }
+    }
+    socket.leave(roomCode);
+    socket.data.roomCode = null;
+    socket.data.playerNumber = null;
+  };
+
   socket.on('create_room', (_data, callback) => {
+    if (socket.data.roomCode) handleLeave();
     const roomCode = generateRoomCode();
     const seed = generateSeed();
     rooms.set(roomCode, {
       players: [{ id: socket.id, playerNumber: 1 }],
       seed,
       rematchVotes: new Set(),
+      throwSeq: 0,
+      p1ThrowsMade: 0,
+      p2ThrowsMade: 0,
+      gameStarted: false,
     });
     socket.join(roomCode);
     socket.data.roomCode = roomCode;
@@ -54,6 +84,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_room', (data, callback) => {
+    if (socket.data.roomCode) handleLeave();
     const rawCode = (data && data.roomCode ? String(data.roomCode) : '')
       .trim()
       .toUpperCase();
@@ -84,11 +115,18 @@ io.on('connection', (socket) => {
     socket.data.roomCode = rawCode;
     socket.data.playerNumber = 2;
 
+    // Reset throw counters for fresh game
+    room.throwSeq = 0;
+    room.p1ThrowsMade = 0;
+    room.p2ThrowsMade = 0;
+    room.gameStarted = true;
+
     console.log(`[room joined] ${rawCode} by ${socket.id}`);
     if (typeof callback === 'function') {
       callback({ ok: true, roomCode: rawCode, playerNumber: 2, seed: room.seed });
     }
 
+    // Emit game_start to entire room (both players)
     io.to(rawCode).emit('game_start', {
       roomCode: rawCode,
       seed: room.seed,
@@ -98,9 +136,23 @@ io.on('connection', (socket) => {
   socket.on('throw_knife', (data) => {
     const roomCode = socket.data.roomCode;
     if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    // Assign a monotonically increasing sequence number for ordering guarantees
+    const seq = ++room.throwSeq;
+    const playerNumber = socket.data.playerNumber;
+
+    // Track server-side throw counts (for future authoritative state if needed)
+    if (playerNumber === 1) room.p1ThrowsMade++;
+    else room.p2ThrowsMade++;
+
+    console.log(`[throw] room=${roomCode} p${playerNumber} seq=${seq} angle=${data?.targetAngle?.toFixed?.(3) ?? data?.targetAngle}`);
+
     socket.to(roomCode).emit('opponent_throw', {
-      playerNumber: socket.data.playerNumber,
+      playerNumber,
       targetAngle: data?.targetAngle ?? 0,
+      seq, // Client uses this to discard out-of-order events
     });
   });
 
@@ -123,28 +175,15 @@ io.on('connection', (socket) => {
     if (room.rematchVotes.size >= 2) {
       room.rematchVotes.clear();
       room.seed = generateSeed();
+      // Reset server-side throw counters for new match
+      room.throwSeq = 0;
+      room.p1ThrowsMade = 0;
+      room.p2ThrowsMade = 0;
       io.to(roomCode).emit('rematch_start', { seed: room.seed });
     } else {
       socket.to(roomCode).emit('opponent_rematch_ready');
     }
   });
-
-  const handleLeave = () => {
-    const roomCode = socket.data.roomCode;
-    if (!roomCode) return;
-    const room = rooms.get(roomCode);
-    if (room) {
-      room.players = room.players.filter((p) => p.id !== socket.id);
-      socket.to(roomCode).emit('opponent_disconnected');
-      if (room.players.length === 0) {
-        rooms.delete(roomCode);
-        console.log(`[room closed] ${roomCode}`);
-      }
-    }
-    socket.leave(roomCode);
-    socket.data.roomCode = null;
-    socket.data.playerNumber = null;
-  };
 
   socket.on('leave_room', handleLeave);
   socket.on('disconnect', () => {
