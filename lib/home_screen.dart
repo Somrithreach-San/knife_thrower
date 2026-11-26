@@ -68,15 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF0D1D36),
-                  Color(0xFF0B172A),
-                  Color(0xFF091222),
-                ],
-              ),
+              color: Color(0xFF0A1628),
             ),
             child: Stack(
               children: [
@@ -102,35 +94,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisAlignment: MainAxisAlignment.end,
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          const Spacer(flex: 7),
+                          const Spacer(flex: 5),
 
-                          // Subtitle
-                          Text(
-                            '2 PLAYER GAME',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13 * scale,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontFamily: 'Montserrat',
-                              letterSpacing: 1.2,
-                            ),
+                          // Title Image (pushed up)
+                          Image.asset(
+                            'assets/images/Knife_Thrower_Title.png',
+                            width: 280 * scale,
+                            fit: BoxFit.contain,
                           ),
-                          SizedBox(height: 8 * scale),
-
-                          // Title
-                          Text(
-                            'KNIFE THROWER',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 30 * scale,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              fontFamily: 'Montserrat',
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          SizedBox(height: 36 * scale),
+                          SizedBox(height: 6 * scale),
 
                           // Play Button (Green)
                           GameButton(

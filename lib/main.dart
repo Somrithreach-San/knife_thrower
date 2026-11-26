@@ -15,6 +15,8 @@ import 'utils.dart';
 import 'bot_ai.dart';
 import 'customization_service.dart';
 import 'back_arrow_button.dart';
+import 'services/online_game_service.dart';
+import 'mode_selection_screen.dart';
 import 'widgets/app_loading_indicator.dart';
 
 // ─────────────────────────────────────────────
@@ -149,10 +151,21 @@ class KnifeThrowerApp extends StatelessWidget {
 class GamePage extends StatefulWidget {
   final bool isBotMode;
   final BotDifficulty botDifficulty;
+  final bool isOnlineMode;
+  final OnlineGameService? onlineService;
+  final String? roomCode;
+  final int localPlayerNumber;
+  final int? matchSeed;
+
   const GamePage({
     super.key,
     this.isBotMode = false,
     this.botDifficulty = BotDifficulty.medium,
+    this.isOnlineMode = false,
+    this.onlineService,
+    this.roomCode,
+    this.localPlayerNumber = 1,
+    this.matchSeed,
   });
 
   @override
@@ -200,9 +213,14 @@ class _GamePageState extends State<GamePage> {
         final game = KnifeThrowerGame(
           isBotMode: widget.isBotMode,
           botDifficulty: widget.botDifficulty,
+          isOnlineMode: widget.isOnlineMode,
           selectedKnifeAsset: selections.knifeAsset,
           selectedTargetAsset: selections.targetAsset,
           selectedKnifeIndex: selections.knifeIndex,
+          onlineService: widget.onlineService,
+          roomCode: widget.roomCode,
+          localPlayerNumber: widget.localPlayerNumber,
+          matchSeed: widget.matchSeed,
         );
         game.isReadyNotifier.addListener(_onGameReady);
         setState(() {
@@ -215,9 +233,14 @@ class _GamePageState extends State<GamePage> {
         final game = KnifeThrowerGame(
           isBotMode: widget.isBotMode,
           botDifficulty: widget.botDifficulty,
+          isOnlineMode: widget.isOnlineMode,
           selectedKnifeAsset: CustomizationService.knives[0],
           selectedTargetAsset: CustomizationService.targets[0],
           selectedKnifeIndex: 0,
+          onlineService: widget.onlineService,
+          roomCode: widget.roomCode,
+          localPlayerNumber: widget.localPlayerNumber,
+          matchSeed: widget.matchSeed,
         );
         game.isReadyNotifier.addListener(_onGameReady);
         setState(() {
@@ -240,15 +263,26 @@ class _GamePageState extends State<GamePage> {
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent) {
             final key = event.logicalKey;
-            if (key == LogicalKeyboardKey.space ||
-                key == LogicalKeyboardKey.arrowDown ||
-                key == LogicalKeyboardKey.keyS) {
-              _game?.handleInput(1);
-              return KeyEventResult.handled;
-            } else if (key == LogicalKeyboardKey.arrowUp ||
-                key == LogicalKeyboardKey.keyW) {
-              _game?.handleInput(2);
-              return KeyEventResult.handled;
+            if (widget.isOnlineMode) {
+              if (key == LogicalKeyboardKey.space ||
+                  key == LogicalKeyboardKey.arrowUp ||
+                  key == LogicalKeyboardKey.arrowDown ||
+                  key == LogicalKeyboardKey.keyW ||
+                  key == LogicalKeyboardKey.keyS) {
+                _game?.handleInput(widget.localPlayerNumber);
+                return KeyEventResult.handled;
+              }
+            } else {
+              if (key == LogicalKeyboardKey.space ||
+                  key == LogicalKeyboardKey.arrowDown ||
+                  key == LogicalKeyboardKey.keyS) {
+                _game?.handleInput(1);
+                return KeyEventResult.handled;
+              } else if (key == LogicalKeyboardKey.arrowUp ||
+                  key == LogicalKeyboardKey.keyW) {
+                _game?.handleInput(2);
+                return KeyEventResult.handled;
+              }
             }
           }
           return KeyEventResult.ignored;
@@ -275,6 +309,10 @@ class _GamePageState extends State<GamePage> {
                         GameOverOverlay(game: g as KnifeThrowerGame),
                     'countdown': (ctx, g) =>
                         CountdownOverlay(game: g as KnifeThrowerGame),
+                    'opponentDisconnected': (ctx, g) =>
+                        OpponentDisconnectedOverlay(
+                          game: g as KnifeThrowerGame,
+                        ),
                   },
                 ),
               ),
@@ -322,16 +360,31 @@ class KnifeThrowerGame extends FlameGame
     with TapCallbacks, MultiTouchDragDetector {
   final bool isBotMode;
   final BotDifficulty botDifficulty;
+  final bool isOnlineMode;
   final String selectedKnifeAsset;
   final String selectedTargetAsset;
   final int selectedKnifeIndex;
+  final OnlineGameService? onlineService;
+  final String? roomCode; // For online multiplayer
+  final int localPlayerNumber; // 1 = Red/Bottom, 2 = Blue/Top
+  int? matchSeed;
+
+  late math.Random _matchRng;
+
   KnifeThrowerGame({
     this.isBotMode = false,
     this.botDifficulty = BotDifficulty.medium,
     required this.selectedKnifeAsset,
     required this.selectedTargetAsset,
     required this.selectedKnifeIndex,
-  });
+    this.isOnlineMode = false,
+    this.onlineService,
+    this.roomCode,
+    this.localPlayerNumber = 1,
+    this.matchSeed,
+  }) {
+    _matchRng = matchSeed != null ? math.Random(matchSeed) : math.Random();
+  }
 
   static final _rng = math.Random();
   late Target target;
@@ -519,6 +572,30 @@ class KnifeThrowerGame extends FlameGame
       botController = BotController(this, difficulty: botDifficulty);
     }
 
+    if (isOnlineMode && onlineService != null) {
+      onlineService!.onOpponentThrow = (playerNum, targetAngle) {
+        _handleRemoteThrow(playerNum, targetAngle);
+      };
+      onlineService!.onTargetSync = (angle, dir) {
+        if (!isTransitioning && !isGameOver) {
+          target.applyRemoteSync(angle, dir);
+        }
+      };
+      onlineService!.onRematchStart = (newSeed) {
+        matchSeed = newSeed;
+        _matchRng = math.Random(newSeed);
+        restartGame();
+      };
+      onlineService!.onOpponentDisconnected = () {
+        if (!isGameOver) {
+          isGameOver = true;
+          isCountingDown = false;
+          overlays.remove('countdown');
+          overlays.add('opponentDisconnected');
+        }
+      };
+    }
+
     // Add initial pre-thrown knives and prepare game
     _addPreThrownKnivesToTarget();
     _spawnInitialKnives();
@@ -530,10 +607,12 @@ class KnifeThrowerGame extends FlameGame
     isCountingDown = true;
     overlays.add('countdown');
     for (int i = 3; i > 0; i--) {
+      if (!isMounted || isGameOver) return;
       countdownNotifier.value = i;
       // You can add a "tick" sound here if you have one
       await Future.delayed(const Duration(seconds: 1));
     }
+    if (!isMounted || isGameOver) return;
     overlays.remove('countdown');
     isCountingDown = false;
   }
@@ -596,11 +675,9 @@ class KnifeThrowerGame extends FlameGame
 
     if (numPreThrown == 0) return;
 
-    final random = math.Random();
+    final random = _matchRng;
     // Use a random starting offset so the pattern isn't always at the same fixed orientation
     final startOffset = random.nextDouble() * 2 * math.pi;
-
-    final List<double> preThrownAngles = [];
 
     final scale = scaleFactor;
 
@@ -610,7 +687,6 @@ class KnifeThrowerGame extends FlameGame
       // For 4 knives: 0, 90, 180, 270 degrees
       final angleStep = (2 * math.pi) / numPreThrown;
       final localAngle = startOffset + (i * angleStep);
-      preThrownAngles.add(normalizeAngle(localAngle));
 
       // Use the pre-placed knife asset for initial stuck knives
       final player = random.nextBool() ? 1 : 2;
@@ -822,6 +898,10 @@ class KnifeThrowerGame extends FlameGame
 
   @override
   void onTapDown(TapDownEvent event) {
+    if (isOnlineMode) {
+      handleInput(localPlayerNumber);
+      return;
+    }
     final y = event.localPosition.y;
     handleInput(y < size.y / 2 ? 2 : 1);
   }
@@ -837,6 +917,14 @@ class KnifeThrowerGame extends FlameGame
     if (start == null) return;
 
     final gy = info.eventPosition.global.y;
+    if (isOnlineMode) {
+      if ((start.y - gy).abs() > GameConfig.swipeMinDistance) {
+        handleInput(localPlayerNumber);
+        _activeDragStart.remove(pointerId);
+      }
+      return;
+    }
+
     if (start.y > size.y / 2) {
       if ((start.y - gy) > GameConfig.swipeMinDistance) {
         handleInput(1);
@@ -860,9 +948,21 @@ class KnifeThrowerGame extends FlameGame
     _activeDragStart.remove(pointerId);
   }
 
-  void handleInput(int player) {
-    // Only human input should reset the idle timer (ignore automated bot actions)
-    final bool isHumanInput = (player == 1) || (!isBotMode && player == 2);
+  void _handleRemoteThrow(int player, double targetAngle) {
+    if (isGameOver || isTransitioning || isCountingDown) return;
+    target.angle = targetAngle;
+    handleInput(player, isRemote: true);
+  }
+
+  void handleInput(int player, {bool isRemote = false}) {
+    if (isOnlineMode && !isRemote && player != localPlayerNumber) {
+      return;
+    }
+
+    // Only human input should reset the idle timer (ignore automated bot/remote actions)
+    final bool isHumanInput = isOnlineMode
+        ? !isRemote
+        : (player == 1) || (!isBotMode && player == 2);
     if (isHumanInput) {
       _idleTime = 0.0;
       if (showTapHelperNotifier.value) {
@@ -871,7 +971,9 @@ class KnifeThrowerGame extends FlameGame
     }
 
     if (isGameOver) {
-      restartGame();
+      if (!isOnlineMode) {
+        restartGame();
+      }
       return;
     }
 
@@ -883,18 +985,27 @@ class KnifeThrowerGame extends FlameGame
       if (p1ThrowsMade < GameConfig.knivesPerRound &&
           !p1Knife.isThrowing &&
           !p1Knife.isMoving) {
+        if (isOnlineMode && !isRemote) {
+          onlineService?.sendThrow(target.angle);
+        }
         p1Knife.throwKnife();
       }
     } else {
       if (p2ThrowsMade < GameConfig.knivesPerRound &&
           !p2Knife.isThrowing &&
           !p2Knife.isMoving) {
+        if (isOnlineMode && !isRemote) {
+          onlineService?.sendThrow(target.angle);
+        }
         p2Knife.throwKnife();
       }
     }
   }
 
   void restartGame() {
+    if (matchSeed != null) {
+      _matchRng = math.Random(matchSeed);
+    }
     isGameOver = false;
     isTransitioning = false;
     _hasShownTapHelperThisGame = false;
@@ -1122,6 +1233,7 @@ class KnifeThrowerGame extends FlameGame
 
   @override
   void onRemove() {
+    onlineService?.clearInGameCallbacks();
     p1ScoreNotifier.dispose();
     p2ScoreNotifier.dispose();
     p1ThrowResults.dispose();
@@ -1217,8 +1329,24 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
   }
 
   void _generateNextBehaviorInterval() {
-    _nextChangeInterval = 1.2 + KnifeThrowerGame._rng.nextDouble() * 2.0;
+    _nextChangeInterval = 1.2 + game._matchRng.nextDouble() * 2.0;
   }
+
+  void applyRemoteSync(double remoteAngle, double remoteDirectionSign) {
+    _directionSign = remoteDirectionSign;
+    // Shortest angular delta in [-pi, pi] to prevent 0.5s micro-stutters from jitter
+    double diff = (remoteAngle - angle) % (2 * math.pi);
+    if (diff > math.pi) diff -= 2 * math.pi;
+    if (diff < -math.pi) diff += 2 * math.pi;
+
+    if (diff.abs() > 0.45) {
+      angle = remoteAngle;
+    } else if (diff.abs() > 0.03) {
+      angle = (angle + diff * 0.35) % (2 * math.pi);
+    }
+  }
+
+  double _syncAccumulator = 0.0;
 
   @override
   void onGameResize(Vector2 size) {
@@ -1235,13 +1363,28 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
     super.update(dt);
     if (game.isGameOver || game.isCountingDown) return;
 
-    _behaviorTimer += dt;
-    if (_behaviorTimer >= _nextChangeInterval) {
-      _behaviorTimer = 0.0;
-      _generateNextBehaviorInterval();
+    // In online mode, host (Player 1) drives target direction changes and syncs to guest
+    if (!game.isOnlineMode || game.localPlayerNumber == 1) {
+      _behaviorTimer += dt;
+      if (_behaviorTimer >= _nextChangeInterval) {
+        _behaviorTimer = 0.0;
+        _generateNextBehaviorInterval();
 
-      if (KnifeThrowerGame._rng.nextDouble() < 0.75) {
-        _directionSign *= -1.0;
+        if (game._matchRng.nextDouble() < 0.75) {
+          _directionSign *= -1.0;
+        }
+        if (game.isOnlineMode && game.localPlayerNumber == 1) {
+          game.onlineService?.sendTargetSync(angle, _directionSign);
+          _syncAccumulator = 0.0;
+        }
+      }
+
+      if (game.isOnlineMode && game.localPlayerNumber == 1) {
+        _syncAccumulator += dt;
+        if (_syncAccumulator >= 0.5) {
+          _syncAccumulator = 0.0;
+          game.onlineService?.sendTargetSync(angle, _directionSign);
+        }
       }
     }
 
@@ -1387,13 +1530,12 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
         game.playPoolSound('Metal_Clashed.ogg');
 
         // Calculate world position for clash particles
-        final targetCenter = game.target.position.clone();
+        final targetCenter = game.target.position;
         final impactWorldAngle = game.target.angle + impactLocalAngle;
-        final clashVector = Vector2(
-          math.cos(impactWorldAngle) * game.target.radius,
-          math.sin(impactWorldAngle) * game.target.radius,
+        final clashPoint = Vector2(
+          targetCenter.x + math.cos(impactWorldAngle) * game.target.radius,
+          targetCenter.y + math.sin(impactWorldAngle) * game.target.radius,
         );
-        final clashPoint = targetCenter + clashVector;
         // Defer particle spawning to next frame to spread component tree rebuild cost
         Future.microtask(() => game.triggerClashParticles(clashPoint, player));
 
@@ -1409,17 +1551,16 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     // Record hit immediately to trigger cracking sound/visuals without delay
     game.recordHit(player);
 
-    final targetCenter = game.target.position.clone();
+    final targetCenter = game.target.position;
     // Calculate the actual impact point based on the target's current rotation
     // Adjust radius to account for embedDepth (knife penetrates into the target)
     final impactWorldAngle = game.target.angle + impactLocalAngle;
     final embeddedRadius =
         game.target.radius - (size.y * GameConfig.embedDepth * 0.5);
-    final contactVector = Vector2(
-      math.cos(impactWorldAngle) * embeddedRadius,
-      math.sin(impactWorldAngle) * embeddedRadius,
+    final preciseImpactPoint = Vector2(
+      targetCenter.x + math.cos(impactWorldAngle) * embeddedRadius,
+      targetCenter.y + math.sin(impactWorldAngle) * embeddedRadius,
     );
-    final preciseImpactPoint = targetCenter + contactVector;
 
     final particleColor = player == 1
         ? const Color(0xFFD32F2F)
@@ -1685,30 +1826,68 @@ class HudOverlay extends StatelessWidget {
                 ),
               ),
 
+              // Online room & player badge
+              if (game.isOnlineMode && game.roomCode != null)
+                Positioned(
+                  left: 16 * scale,
+                  top: 16 * scale,
+                  child: SafeArea(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10 * scale,
+                        vertical: 6 * scale,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10 * scale),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Text(
+                        'ROOM ${game.roomCode} • YOU: ${game.localPlayerNumber == 1 ? 'RED' : 'BLUE'}',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontFamily: 'Montserrat',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11 * scale,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
               // Tap the screen helper animation when idle for > 10s
               ValueListenableBuilder<bool>(
                 valueListenable: game.showTapHelperNotifier,
                 builder: (context, showHelper, _) {
                   if (!showHelper) return const SizedBox.shrink();
                   final gifSize = 140.0 * scale;
+                  final showP1 =
+                      !game.isOnlineMode || game.localPlayerNumber == 1;
+                  final showP2 = game.isOnlineMode
+                      ? game.localPlayerNumber == 2
+                      : !game.isBotMode;
                   return Stack(
                     fit: StackFit.expand,
                     children: [
                       // Player 1 (Bottom / Red) Tap Helper
-                      Positioned(
-                        left: (screenWidth / 2) + 20 * scale,
-                        bottom: 45 * scale,
-                        child: IgnorePointer(
-                          child: Image.asset(
-                            'assets/images/Tap_the_screen.gif',
-                            width: gifSize,
-                            height: gifSize,
-                            fit: BoxFit.contain,
+                      if (showP1)
+                        Positioned(
+                          left: (screenWidth / 2) + 20 * scale,
+                          bottom: 45 * scale,
+                          child: IgnorePointer(
+                            child: Image.asset(
+                              'assets/images/Tap_the_screen.gif',
+                              width: gifSize,
+                              height: gifSize,
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ),
-                      ),
-                      // Player 2 (Top / Blue) Tap Helper in VS. FRIEND mode
-                      if (!game.isBotMode)
+                      // Player 2 (Top / Blue) Tap Helper
+                      if (showP2)
                         Positioned(
                           right: (screenWidth / 2) + 20 * scale,
                           top: 45 * scale,
@@ -1989,6 +2168,8 @@ class _GameOverOverlayState extends State<GameOverOverlay>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   bool _canRestart = false;
+  bool _rematchRequested = false;
+  bool _opponentRematchReady = false;
 
   @override
   void initState() {
@@ -2001,6 +2182,14 @@ class _GameOverOverlayState extends State<GameOverOverlay>
       parent: _fadeController,
       curve: Curves.easeInOut,
     );
+
+    if (widget.game.isOnlineMode && widget.game.onlineService != null) {
+      widget.game.onlineService!.onOpponentRematchReady = () {
+        if (mounted) {
+          setState(() => _opponentRematchReady = true);
+        }
+      };
+    }
 
     // Wait 1.5s before showing the overlay to let final game action settle
     Future.delayed(const Duration(milliseconds: 1500), () {
@@ -2022,6 +2211,12 @@ class _GameOverOverlayState extends State<GameOverOverlay>
     super.dispose();
   }
 
+  String get _onlinePromptText {
+    if (_rematchRequested) return 'WAITING FOR FRIEND...';
+    if (_opponentRematchReady) return 'FRIEND READY - TAP TO REMATCH';
+    return 'TAP TO REMATCH';
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<String>(
@@ -2039,6 +2234,13 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
                   if (!_canRestart) return;
+                  if (widget.game.isOnlineMode) {
+                    if (!_rematchRequested) {
+                      setState(() => _rematchRequested = true);
+                      widget.game.onlineService?.sendRematchRequest();
+                    }
+                    return;
+                  }
                   widget.game.restartGame();
                   widget.game.overlays.remove('gameOver');
                   widget.game.overlays.add('hud');
@@ -2057,6 +2259,9 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                                 player: 2,
                                 winner: winner,
                                 canRestart: _canRestart,
+                                promptText: widget.game.isOnlineMode
+                                    ? _onlinePromptText
+                                    : 'TAP TO PLAY AGAIN',
                               ),
                             ),
                           ),
@@ -2066,6 +2271,9 @@ class _GameOverOverlayState extends State<GameOverOverlay>
                               player: 1,
                               winner: winner,
                               canRestart: _canRestart,
+                              promptText: widget.game.isOnlineMode
+                                  ? _onlinePromptText
+                                  : 'TAP TO PLAY AGAIN',
                             ),
                           ),
                         ],
@@ -2112,11 +2320,13 @@ class _GameOverPlayerSection extends StatelessWidget {
   final int player;
   final String winner;
   final bool canRestart;
+  final String promptText;
 
   const _GameOverPlayerSection({
     required this.player,
     required this.winner,
     required this.canRestart,
+    this.promptText = 'TAP TO PLAY AGAIN',
   });
 
   @override
@@ -2192,7 +2402,7 @@ class _GameOverPlayerSection extends StatelessWidget {
                       opacity: canRestart ? 1.0 : 0.0,
                       duration: const Duration(milliseconds: 500),
                       child: Text(
-                        'TAP TO PLAY AGAIN',
+                        promptText,
                         style: TextStyle(
                           fontFamily: 'Programme',
                           fontSize: 16 * scale,
@@ -2209,6 +2419,66 @@ class _GameOverPlayerSection extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class OpponentDisconnectedOverlay extends StatelessWidget {
+  final KnifeThrowerGame game;
+  const OpponentDisconnectedOverlay({super.key, required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF0A1628).withValues(alpha: 0.88),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.wifi_off_rounded,
+                color: Color(0xFFFF8A80),
+                size: 52,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'OPPONENT DISCONNECTED',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Montserrat',
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Your friend left the match.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Montserrat',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 28),
+              GameButton(
+                label: 'BACK TO LOBBY',
+                mainColor: const Color(0xFF2CDFA2),
+                accentColor: const Color(0xFF52EBB6),
+                lipColor: const Color(0xFF1C9B71),
+                fontSize: 16,
+                onTap: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

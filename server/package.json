@@ -1,0 +1,13 @@
+{
+  "name": "knife-thrower-server",
+  "version": "1.0.0",
+  "description": "Socket.IO multiplayer server for Knife Thrower Online VS Friend",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

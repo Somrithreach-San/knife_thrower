@@ -104,15 +104,7 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF0D1D36),
-                  Color(0xFF0B172A),
-                  Color(0xFF091222),
-                ],
-              ),
+              color: Color(0xFF0A1628),
             ),
             child: Stack(
               children: [
@@ -337,10 +329,10 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                                   shadows: [
                                     Shadow(
                                       color: Colors.black.withValues(
-                                        alpha: 0.3,
+                                        alpha: 0.55,
                                       ),
-                                      offset: const Offset(0, 2),
-                                      blurRadius: 4,
+                                      offset: Offset(0, 3 * scale),
+                                      blurRadius: 2.0 * scale,
                                     ),
                                   ],
                                 ),

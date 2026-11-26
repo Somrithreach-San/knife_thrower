@@ -66,11 +66,6 @@ class _CustomizationPageState extends State<CustomizationPage> {
   ];
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_assetsPrecached) {
@@ -160,15 +155,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF0D1D36),
-                  Color(0xFF0B172A),
-                  Color(0xFF091222),
-                ],
-              ),
+              color: Color(0xFF0A1628),
             ),
             child: Stack(
               children: [
@@ -226,94 +213,122 @@ class _CustomizationPageState extends State<CustomizationPage> {
 
   Widget _buildToggle(double scale) {
     final toggleWidth = 280.0 * scale;
-    final toggleHeight = 56.0 * scale;
-    final pillWidth = (toggleWidth - 12 * scale) / 2;
+    final lipHeight = 5.0 * scale;
+    final faceHeight = 52.0 * scale;
+    final toggleHeight = faceHeight + lipHeight;
+    const outerRadius = 6.0;
+    const pillRadius = 4.0;
+    final pillPadding = 5.0 * scale;
+    final pillWidth = (toggleWidth - pillPadding * 2) / 2;
 
-    return Container(
+    return SizedBox(
       width: toggleWidth,
       height: toggleHeight,
-      decoration: BoxDecoration(
-        color: const Color(0xFF8B909A).withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(12 * scale),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            offset: const Offset(0, 3),
-            blurRadius: 4,
-          ),
-        ],
-      ),
       child: Stack(
         children: [
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOutCubic,
-            left: _selectedTab == 'knife' ? 6 * scale : toggleWidth / 2,
-            top: 5 * scale,
-            width: pillWidth,
-            height: toggleHeight - 10 * scale,
+          // 3D bottom lip matching GameButton and _ItemCard
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: faceHeight,
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF404040).withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(8 * scale),
+                color: const Color(0xFF686D76),
+                borderRadius: BorderRadius.circular(outerRadius),
               ),
             ),
           ),
-          Row(
-            children: [
-              Expanded(
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (_selectedTab != 'knife') {
-                        setState(() {
-                          _selectedTab = 'knife';
-                        });
-                      }
-                    },
-                    child: Center(
-                      child: Text(
-                        'KNIFE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15 * scale,
-                          fontWeight: FontWeight.w900,
-                          fontFamily: 'Montserrat',
-                        ),
+          // Main face
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: faceHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF8B909A),
+                borderRadius: BorderRadius.circular(outerRadius),
+              ),
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOutCubic,
+                    left: _selectedTab == 'knife'
+                        ? pillPadding
+                        : toggleWidth / 2,
+                    top: pillPadding,
+                    width: pillWidth,
+                    height: faceHeight - pillPadding * 2,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF404040).withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(pillRadius),
                       ),
                     ),
                   ),
-                ),
-              ),
-              Expanded(
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () {
-                      if (_selectedTab != 'target') {
-                        setState(() {
-                          _selectedTab = 'target';
-                        });
-                      }
-                    },
-                    child: Center(
-                      child: Text(
-                        'TARGET',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15 * scale,
-                          fontWeight: FontWeight.w900,
-                          fontFamily: 'Montserrat',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (_selectedTab != 'knife') {
+                                setState(() {
+                                  _selectedTab = 'knife';
+                                });
+                              }
+                            },
+                            child: Center(
+                              child: Text(
+                                'KNIFE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15 * scale,
+                                  fontWeight: FontWeight.w900,
+                                  fontFamily: 'Montserrat',
+                                  letterSpacing: 0.5 * scale,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      Expanded(
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (_selectedTab != 'target') {
+                                setState(() {
+                                  _selectedTab = 'target';
+                                });
+                              }
+                            },
+                            child: Center(
+                              child: Text(
+                                'TARGET',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15 * scale,
+                                  fontWeight: FontWeight.w900,
+                                  fontFamily: 'Montserrat',
+                                  letterSpacing: 0.5 * scale,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -398,6 +413,7 @@ class _ItemCardState extends State<_ItemCard> {
     final lipHeight = 5.0 * widget.scale;
     final baseWidth = 130.0 * widget.scale;
     final baseHeight = 160.0 * widget.scale;
+    const cardRadius = 6.0;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -420,7 +436,7 @@ class _ItemCardState extends State<_ItemCard> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF686D76),
-                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                    borderRadius: BorderRadius.circular(cardRadius),
                   ),
                 ),
               ),
@@ -429,6 +445,7 @@ class _ItemCardState extends State<_ItemCard> {
                 duration: _isPressed
                     ? const Duration(milliseconds: 50)
                     : const Duration(milliseconds: 100),
+                curve: Curves.easeOutCubic,
                 top: _isPressed ? lipHeight : 0,
                 left: 0,
                 right: 0,
@@ -436,58 +453,58 @@ class _ItemCardState extends State<_ItemCard> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF8B909A),
-                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                    borderRadius: BorderRadius.circular(cardRadius),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12 * widget.scale),
+                    borderRadius: BorderRadius.circular(cardRadius),
                     child: Stack(
                       children: [
                         // Main circle (light gray)
                         Positioned(
                           left: 25 * widget.scale,
-                          top: 40 * widget.scale,
+                          top: 38 * widget.scale,
                           child: Container(
                             width: 80 * widget.scale,
                             height: 80 * widget.scale,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFE1E1E1),
+                              color: Color(0xFFDCDCDC),
                               shape: BoxShape.circle,
                             ),
                           ),
                         ),
-                        // Decorative circles
+                        // Decorative circles overlapping perimeter (matching Figma)
                         Positioned(
-                          right: 8 * widget.scale,
-                          top: 75 * widget.scale,
+                          right: 17 * widget.scale,
+                          top: 83 * widget.scale,
                           child: Container(
-                            width: 17 * widget.scale,
-                            height: 17 * widget.scale,
+                            width: 18 * widget.scale,
+                            height: 18 * widget.scale,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFEAEAEA),
+                              color: Color(0xFFC7C7C7),
                               shape: BoxShape.circle,
                             ),
                           ),
                         ),
                         Positioned(
-                          left: 12 * widget.scale,
-                          top: 75 * widget.scale,
+                          left: 22 * widget.scale,
+                          top: 86 * widget.scale,
                           child: Container(
                             width: 11 * widget.scale,
                             height: 11 * widget.scale,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFEAEAEA),
+                              color: Color(0xFFC7C7C7),
                               shape: BoxShape.circle,
                             ),
                           ),
                         ),
                         Positioned(
-                          right: 15 * widget.scale,
-                          top: 38 * widget.scale,
+                          right: 20 * widget.scale,
+                          top: 44 * widget.scale,
                           child: Container(
                             width: 8 * widget.scale,
                             height: 8 * widget.scale,
                             decoration: const BoxDecoration(
-                              color: Color(0xFFEAEAEA),
+                              color: Color(0xFFC7C7C7),
                               shape: BoxShape.circle,
                             ),
                           ),

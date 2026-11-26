@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'main.dart'; // To access GamePage and GameConfig
+import 'friend_mode_screen.dart';
 import 'difficulty_screen.dart';
 import 'back_arrow_button.dart';
 import 'widgets/app_loading_indicator.dart';
 
-enum GameButtonIcon { vsFriend, vsBot, easy, normal, hard }
+enum GameButtonIcon { vsFriend, vsBot, local, online, easy, normal, hard }
 
 class GameButton extends StatefulWidget {
   final String label;
@@ -16,6 +17,8 @@ class GameButton extends StatefulWidget {
   final VoidCallback? onTap;
   final double scale;
   final double fontSize;
+  final double? width;
+  final double? height;
 
   const GameButton({
     super.key,
@@ -27,6 +30,8 @@ class GameButton extends StatefulWidget {
     this.onTap,
     this.scale = 1.0,
     this.fontSize = 16,
+    this.width,
+    this.height,
   });
 
   @override
@@ -38,114 +43,128 @@ class _GameButtonState extends State<GameButton> {
 
   @override
   Widget build(BuildContext context) {
-    const lipHeight = 2.0;
-    const baseWidth = 230.0;
-    const baseHeight = 64.0;
+    const defaultWidth = 230.0;
+    const defaultHeight = 64.0;
+    const defaultLipHeight = 8.0;
 
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: SizedBox(
-        width: baseWidth * widget.scale,
-        height: baseHeight * widget.scale,
-        child: Stack(
-          children: [
-            // 3D bottom lip
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 60 * widget.scale,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: widget.lipColor,
-                  borderRadius: BorderRadius.circular(8 * widget.scale),
+    final width = (widget.width ?? defaultWidth) * widget.scale;
+    final height = (widget.height ?? defaultHeight) * widget.scale;
+    final lipHeight = defaultLipHeight * widget.scale;
+    const borderRadius = 6.0; // Matches Figma spec (not scaled — px value is absolute)
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onTap,
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            children: [
+              // 3D bottom lip (full-height rounded base behind face so corners have no gap)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: height - lipHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: widget.lipColor,
+                    borderRadius: BorderRadius.circular(borderRadius),
+                  ),
                 ),
               ),
-            ),
-            // Main face
-            AnimatedPositioned(
-              duration: _pressed
-                  ? const Duration(milliseconds: 50)
-                  : const Duration(milliseconds: 100),
-              top: _pressed ? lipHeight * widget.scale : 0,
-              left: 0,
-              right: 0,
-              bottom: _pressed ? 0 : lipHeight * widget.scale,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: widget.mainColor,
-                  borderRadius: BorderRadius.circular(8 * widget.scale),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8 * widget.scale),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Angled accent panel (only if icon exists)
-                      if (widget.icon != null)
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _AccentPanelPainter(
-                              accentColor: widget.accentColor,
-                              lipColor: widget.lipColor,
+              // Main face with press animation
+              AnimatedPositioned(
+                duration: _pressed
+                    ? const Duration(milliseconds: 50)
+                    : const Duration(milliseconds: 100),
+                curve: Curves.easeOutCubic,
+                top: _pressed ? lipHeight : 0,
+                left: 0,
+                right: 0,
+                bottom: _pressed ? 0 : lipHeight,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: widget.mainColor,
+                    borderRadius: BorderRadius.circular(borderRadius),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(borderRadius),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Angled accent panel (only if icon exists)
+                        if (widget.icon != null)
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: _AccentPanelPainter(
+                                accentColor: widget.accentColor,
+                                lipColor: widget.lipColor,
+                              ),
                             ),
                           ),
-                        ),
-                      // Icon (only if exists)
-                      if (widget.icon != null)
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: baseWidth * 0.28 * widget.scale,
-                          child: Center(child: _buildIcon()),
-                        ),
-                      // Text
-                      Positioned(
-                        left: widget.icon != null
-                            ? baseWidth * 0.28 * widget.scale
-                            : 0,
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8 * widget.scale,
+                        // Icon (only if exists) - centered within accent zone
+                        if (widget.icon != null)
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            width: width * 0.28,
+                            child: Center(
+                              child: ConstrainedBox(
+                                // maxWidth keeps icon inside the accent zone.
+                                // maxHeight is relaxed (1.8×) so vs_friend's large
+                                // transparent padding doesn't shrink the actual figures —
+                                // the outer ClipRRect already clips visual overflow.
+                                constraints: BoxConstraints(
+                                  maxWidth: width * 0.26,
+                                  maxHeight: (height - lipHeight) * 1.8,
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.contain,
+                                  child: _buildIcon(),
+                                ),
+                              ),
+                            ),
                           ),
+                        // Text - centered horizontally
+                        Positioned(
+                          left: widget.icon != null ? width * 0.28 : 0,
+                          top: 0,
+                          right: 0,
+                          bottom: 0,
                           child: Center(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                widget.label,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: widget.fontSize * widget.scale,
-                                  fontWeight: FontWeight.w900,
-                                  fontFamily: 'Montserrat',
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.2,
-                                      ),
-                                      offset: const Offset(0, 1),
-                                      blurRadius: 3,
-                                    ),
-                                  ],
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 8.0 * widget.scale,
+                              ),
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  widget.label,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: widget.fontSize * widget.scale,
+                                    fontWeight: FontWeight.w900,
+                                    fontFamily: 'Montserrat',
+                                    letterSpacing: 0.5 * widget.scale,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -154,9 +173,11 @@ class _GameButtonState extends State<GameButton> {
   Widget _buildIcon() {
     switch (widget.icon) {
       case GameButtonIcon.vsFriend:
+        // vs_friend.png has ~50% empty transparent padding around its content
+        // whereas vs_bot fills ~90% of its canvas. Sized up to match visual height & weight.
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 68 * widget.scale,
+          height: 68 * widget.scale,
           child: Image.asset(
             'assets/images/vs_friend.png',
             fit: BoxFit.contain,
@@ -169,6 +190,16 @@ class _GameButtonState extends State<GameButton> {
           height: 28 * widget.scale,
           child: Image.asset(
             'assets/images/vs_bot.png',
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        );
+      case GameButtonIcon.local:
+        return SizedBox(
+          width: 38 * widget.scale,
+          height: 38 * widget.scale,
+          child: Image.asset(
+            'assets/images/vs_friend_local.png',
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
           ),
@@ -189,6 +220,16 @@ class _GameButtonState extends State<GameButton> {
           height: 28 * widget.scale,
           child: Image.asset(
             'assets/images/normal_mode.png',
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
+          ),
+        );
+      case GameButtonIcon.online:
+        return SizedBox(
+          width: 28 * widget.scale,
+          height: 28 * widget.scale,
+          child: Image.asset(
+            'assets/images/vs_friend_online.png',
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
           ),
@@ -241,7 +282,10 @@ class _AccentPanelPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _AccentPanelPainter oldDelegate) {
+    return oldDelegate.accentColor != accentColor ||
+        oldDelegate.lipColor != lipColor;
+  }
 }
 
 class ModeSelectionScreen extends StatefulWidget {
@@ -385,7 +429,8 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                             onTap: () {
                               Navigator.of(context).push(
                                 MaterialPageRoute(
-                                  builder: (context) => const GamePage(),
+                                  builder: (context) =>
+                                      const FriendModeScreen(),
                                 ),
                               );
                             },

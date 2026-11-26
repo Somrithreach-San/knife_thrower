@@ -65,15 +65,6 @@ class CustomizationService {
     return blueKnives[index.clamp(0, blueKnives.length - 1)];
   }
 
-  // Get red version of a knife
-  static String getRedKnife(String knifeAsset) {
-    final index = knives.indexOf(knifeAsset);
-    if (index != -1) {
-      return knives[index];
-    }
-    return knives[0];
-  }
-
   // Get blue version of a knife
   static String getBlueKnife(String knifeAsset) {
     final index = knives.indexOf(knifeAsset);
@@ -93,12 +84,12 @@ class CustomizationService {
     return brokenBlueKnives[index.clamp(0, brokenBlueKnives.length - 1)];
   }
 
-  // Get broken red version (default to v2)
+  // Get broken red version (default to v2) — kept as named convenience helper
   static String getBrokenRedKnife() {
     return 'assets/images/broken_red_knife_v2.png';
   }
 
-  // Get broken blue version (default to v2)
+  // Get broken blue version (default to v2) — kept as named convenience helper
   static String getBrokenBlueKnife() {
     return 'assets/images/broken_blue_knife_v2.png';
   }
@@ -145,24 +136,12 @@ class CustomizationService {
     );
   }
 
-  static Future<int> getSelectedKnifeIndex() async {
-    if (_cachedKnifeIndex != null) return _cachedKnifeIndex!;
-    final selections = await loadSelections();
-    return selections.knifeIndex;
-  }
-
   static Future<void> setSelectedKnifeIndex(int index) async {
     final validIndex = index.clamp(0, knives.length - 1);
     _cachedKnifeIndex = validIndex;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_selectedKnifeKey, validIndex);
     debugPrint('Saved knife index: $validIndex, asset: ${knives[validIndex]}');
-  }
-
-  static Future<int> getSelectedTargetIndex() async {
-    if (_cachedTargetIndex != null) return _cachedTargetIndex!;
-    final selections = await loadSelections();
-    return selections.targetIndex;
   }
 
   static Future<void> setSelectedTargetIndex(int index) async {
@@ -175,13 +154,4 @@ class CustomizationService {
     );
   }
 
-  static Future<String> getSelectedKnife() async {
-    final index = await getSelectedKnifeIndex();
-    return knives[index];
-  }
-
-  static Future<String> getSelectedTarget() async {
-    final index = await getSelectedTargetIndex();
-    return targets[index];
-  }
 }
