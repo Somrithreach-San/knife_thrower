@@ -114,69 +114,77 @@ class _GameToastWidgetState extends State<_GameToastWidget>
 
     return Positioned(
       top: MediaQuery.of(context).padding.top + 16,
-      left: 24,
-      right: 24,
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (ctx, child) => FractionalTranslation(
-          translation: Offset(0, _slideY.value),
-          child: Opacity(opacity: _fade.value, child: child),
-        ),
-        child: GestureDetector(
-          onTap: widget.onDismiss,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                // Dark glassy game-style card
-                color: const Color(0xFF0D1D36).withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: accent.withValues(alpha: 0.55),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.22),
-                    blurRadius: 18,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 4),
+      left: 20,
+      right: 20,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: AnimatedBuilder(
+            animation: _ctrl,
+            builder: (ctx, child) => FractionalTranslation(
+              translation: Offset(0, _slideY.value),
+              child: Opacity(opacity: _fade.value, child: child),
+            ),
+            child: GestureDetector(
+              onTap: widget.onDismiss,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 12,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Icon
-                  Icon(_icon, color: accent, size: 22),
-                  const SizedBox(width: 10),
-                  // Message
-                  Expanded(
-                    child: Text(
-                      widget.message,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        fontFamily: 'Montserrat',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        letterSpacing: 0.3,
-                      ),
+                  decoration: BoxDecoration(
+                    // Dark glassy game-style card
+                    color: const Color(0xFF0D1D36).withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: accent.withValues(alpha: 0.55),
+                      width: 1.5,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.22),
+                        blurRadius: 18,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 4),
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 12,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  // Dismiss X
-                  const SizedBox(width: 8),
-                  Icon(
-                    Icons.close_rounded,
-                    color: Colors.white.withValues(alpha: 0.35),
-                    size: 16,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Icon
+                      Icon(_icon, color: accent, size: 20),
+                      const SizedBox(width: 10),
+                      // Message
+                      Flexible(
+                        child: Text(
+                          widget.message,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontFamily: 'Montserrat',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                      // Dismiss X
+                      const SizedBox(width: 10),
+                      Icon(
+                        Icons.close_rounded,
+                        color: Colors.white.withValues(alpha: 0.35),
+                        size: 16,
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

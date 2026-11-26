@@ -411,6 +411,7 @@ class KnifeThrowerGame extends FlameGame
   bool isGameOver = false;
   bool isTransitioning = false; // Block inputs during target slide transition
   bool isCountingDown = false; // Block inputs during 3-2-1 countdown
+
   int currentRound = 1;
 
   final ValueNotifier<int> p1ScoreNotifier = ValueNotifier(0);
@@ -607,10 +608,10 @@ class KnifeThrowerGame extends FlameGame
     isCountingDown = true;
     overlays.add('countdown');
     for (int i = 3; i > 0; i--) {
-      if (!isMounted || isGameOver) return;
       countdownNotifier.value = i;
       // You can add a "tick" sound here if you have one
       await Future.delayed(const Duration(seconds: 1));
+      if (!isMounted || isGameOver) return;
     }
     if (!isMounted || isGameOver) return;
     overlays.remove('countdown');
@@ -1826,37 +1827,8 @@ class HudOverlay extends StatelessWidget {
                 ),
               ),
 
-              // Online room & player badge
-              if (game.isOnlineMode && game.roomCode != null)
-                Positioned(
-                  left: 16 * scale,
-                  top: 16 * scale,
-                  child: SafeArea(
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 10 * scale,
-                        vertical: 6 * scale,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(10 * scale),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                        ),
-                      ),
-                      child: Text(
-                        'ROOM ${game.roomCode} • YOU: ${game.localPlayerNumber == 1 ? 'RED' : 'BLUE'}',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontFamily: 'Montserrat',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 11 * scale,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // Player / Bot corner indicators
+              ..._buildPlayerIndicators(scale, isWidescreen),
 
               // Tap the screen helper animation when idle for > 10s
               ValueListenableBuilder<bool>(
@@ -1912,6 +1884,71 @@ class HudOverlay extends StatelessWidget {
         );
       },
     );
+  }
+
+  List<Widget> _buildPlayerIndicators(double scale, bool isWidescreen) {
+    final double hPad = (isWidescreen ? 48 : 20) * scale;
+    final double vPad = (isWidescreen ? 36 : 20) * scale;
+    final double iconSize = 34 * scale;
+
+    String? topAsset;
+    bool rotateTop = false;
+    String? bottomAsset;
+
+    if (game.isOnlineMode) {
+      // Online: show You indicator only on the local player's side
+      if (game.localPlayerNumber == 1) {
+        bottomAsset = 'assets/images/You_Indicator.png';
+      } else {
+        topAsset = 'assets/images/You_Indicator.png';
+      }
+    } else if (game.isBotMode) {
+      // Bot mode: only show You for the human player, nothing for bot
+      bottomAsset = 'assets/images/You_Indicator.png';
+    } else {
+      // Local 2-player: show P1 and P2
+      bottomAsset = 'assets/images/P1_Indicator.png';
+      topAsset = 'assets/images/P2_Indicator.png';
+      rotateTop = true;
+    }
+
+    return [
+      if (topAsset != null)
+        Positioned(
+          left: hPad,
+          top: vPad,
+          child: SafeArea(
+            bottom: false,
+            child: IgnorePointer(
+              child: RotatedBox(
+                quarterTurns: rotateTop ? 2 : 0,
+                child: Image.asset(
+                  topAsset,
+                  width: iconSize,
+                  height: iconSize,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+        ),
+      if (bottomAsset != null)
+        Positioned(
+          right: hPad,
+          bottom: vPad,
+          child: SafeArea(
+            top: false,
+            child: IgnorePointer(
+              child: Image.asset(
+                bottomAsset,
+                width: iconSize,
+                height: iconSize,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+    ];
   }
 }
 
@@ -2421,6 +2458,7 @@ class _GameOverPlayerSection extends StatelessWidget {
       },
     );
   }
+
 }
 
 class OpponentDisconnectedOverlay extends StatelessWidget {
