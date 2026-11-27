@@ -420,6 +420,8 @@ class KnifeThrowerGame extends FlameGame
   bool _countdownStartedForMatch = false;
   bool _pendingCountdownStart = false;
   int _matchGeneration = 0;
+  int _countdownGeneration = 0;
+  bool _isRemoved = false;
 
   // Screen shake variables for satisfying hit feedback
   double _shakeIntensity = 0.0;
@@ -748,18 +750,24 @@ class KnifeThrowerGame extends FlameGame
   }
 
   Future<void> startCountdown() async {
+    final gen = ++_countdownGeneration;
     _countdownStartedForMatch = true;
     isCountingDown = true;
     overlays.add('countdown');
-    for (int i = 3; i > 0; i--) {
-      countdownNotifier.value = i;
-      // You can add a "tick" sound here if you have one
-      await Future.delayed(const Duration(seconds: 1));
-      if (!isMounted || isGameOver) return;
+    try {
+      for (int i = 3; i > 0; i--) {
+        if (_isRemoved || isGameOver || gen != _countdownGeneration) return;
+        countdownNotifier.value = i;
+        // You can add a "tick" sound here if you have one
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    } finally {
+      if (gen == _countdownGeneration && !_isRemoved) {
+        countdownNotifier.value = 0;
+        overlays.remove('countdown');
+        isCountingDown = false;
+      }
     }
-    if (!isMounted || isGameOver) return;
-    overlays.remove('countdown');
-    isCountingDown = false;
   }
 
   void playPoolSound(String sound, {double volume = 1.0}) {
@@ -1449,6 +1457,8 @@ class KnifeThrowerGame extends FlameGame
 
   @override
   void onRemove() {
+    _isRemoved = true;
+    _countdownGeneration++;
     onlineService?.clearInGameCallbacks();
     p1ScoreNotifier.dispose();
     p2ScoreNotifier.dispose();
@@ -2040,13 +2050,6 @@ class CountdownOverlay extends StatelessWidget {
                   fontSize: 120 * scale,
                   fontWeight: FontWeight.w900,
                   fontFamily: 'Montserrat',
-                  shadows: const [
-                    Shadow(
-                      color: Colors.black45,
-                      blurRadius: 15,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -2393,7 +2396,7 @@ class _HoldToExitButtonState extends State<HoldToExitButton>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1400),
     );
 
     _controller.addStatusListener((status) {

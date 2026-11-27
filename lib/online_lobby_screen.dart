@@ -111,6 +111,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
             _navigatedToGame = false;
             _onlineService.clearInGameCallbacks();
             _onlineService.leaveRoom();
+            _roomCodeController.clear();
             setState(() {
               _isWaitingForFriend = false;
               _isCreatingRoom = false;

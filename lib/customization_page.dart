@@ -462,56 +462,58 @@ class _ItemCardState extends State<_ItemCard> {
                     borderRadius: BorderRadius.circular(cardRadius),
                     child: Stack(
                       children: [
-                        // Main circle (light gray)
-                        Positioned(
-                          left: 25 * widget.scale,
-                          top: 38 * widget.scale,
-                          child: Container(
-                            width: 80 * widget.scale,
-                            height: 80 * widget.scale,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFDCDCDC),
-                              shape: BoxShape.circle,
+                        if (!widget.isTarget) ...[
+                          // Main circle (light gray)
+                          Positioned(
+                            left: 25 * widget.scale,
+                            top: 38 * widget.scale,
+                            child: Container(
+                              width: 80 * widget.scale,
+                              height: 80 * widget.scale,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFDCDCDC),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                        // Decorative circles overlapping perimeter (matching Figma)
-                        Positioned(
-                          right: 17 * widget.scale,
-                          top: 83 * widget.scale,
-                          child: Container(
-                            width: 18 * widget.scale,
-                            height: 18 * widget.scale,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFC7C7C7),
-                              shape: BoxShape.circle,
+                          // Decorative circles overlapping perimeter (matching Figma)
+                          Positioned(
+                            right: 17 * widget.scale,
+                            top: 83 * widget.scale,
+                            child: Container(
+                              width: 18 * widget.scale,
+                              height: 18 * widget.scale,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFC7C7C7),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          left: 22 * widget.scale,
-                          top: 86 * widget.scale,
-                          child: Container(
-                            width: 11 * widget.scale,
-                            height: 11 * widget.scale,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFC7C7C7),
-                              shape: BoxShape.circle,
+                          Positioned(
+                            left: 22 * widget.scale,
+                            top: 86 * widget.scale,
+                            child: Container(
+                              width: 11 * widget.scale,
+                              height: 11 * widget.scale,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFC7C7C7),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
-                        Positioned(
-                          right: 20 * widget.scale,
-                          top: 44 * widget.scale,
-                          child: Container(
-                            width: 8 * widget.scale,
-                            height: 8 * widget.scale,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFC7C7C7),
-                              shape: BoxShape.circle,
+                          Positioned(
+                            right: 20 * widget.scale,
+                            top: 44 * widget.scale,
+                            child: Container(
+                              width: 8 * widget.scale,
+                              height: 8 * widget.scale,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFC7C7C7),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                         // Item image centered in main circle (or centered in card for targets)
                         widget.isTarget
                             ? Center(

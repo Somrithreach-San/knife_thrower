@@ -146,6 +146,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                // Bottom-center version label (main home screen only)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 16,
+                  child: SafeArea(
+                    top: false,
+                    child: Text(
+                      'V.2.0.0',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontFamily: 'Montserrat',
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           );

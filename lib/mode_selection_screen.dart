@@ -418,6 +418,25 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                           ),
                           SizedBox(height: 36 * scale),
 
+                          // Play vs Bot Button (prioritized first)
+                          GameButton(
+                            label: 'VS. BOT',
+                            mainColor: const Color(0xFFFFB300),
+                            accentColor: const Color(0xFFFFCA28),
+                            lipColor: const Color(0xFFC67C00),
+                            icon: GameButtonIcon.vsBot,
+                            scale: scale,
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const DifficultyScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          SizedBox(height: 20 * scale),
+
                           // Play vs Friend Button
                           GameButton(
                             label: 'VS. FRIEND',
@@ -431,25 +450,6 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const FriendModeScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          SizedBox(height: 20 * scale),
-
-                          // Play vs Bot Button
-                          GameButton(
-                            label: 'VS. BOT',
-                            mainColor: const Color(0xFFFFB300),
-                            accentColor: const Color(0xFFFFCA28),
-                            lipColor: const Color(0xFFC67C00),
-                            icon: GameButtonIcon.vsBot,
-                            scale: scale,
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const DifficultyScreen(),
                                 ),
                               );
                             },

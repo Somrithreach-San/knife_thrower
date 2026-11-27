@@ -96,6 +96,11 @@
         return originalSend.apply(this, args);
       };
 
+      // Prevent the browser's automatic PWA install banner/popup
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+      });
+
       // Remove loading indicator once Flutter renders the first frame
       window.addEventListener('flutter-first-frame', function () {
         const loader = document.getElementById('loading-indicator');

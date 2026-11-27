@@ -324,15 +324,6 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                                   fontWeight: FontWeight.w900,
                                   fontFamily: 'Montserrat',
                                   letterSpacing: 1.0,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.55,
-                                      ),
-                                      offset: Offset(0, 3 * scale),
-                                      blurRadius: 2.0 * scale,
-                                    ),
-                                  ],
                                 ),
                               ),
                             ),
