@@ -419,6 +419,7 @@ class KnifeThrowerGame extends FlameGame
   int _lastRemoteThrowSeq = 0;
   bool _countdownStartedForMatch = false;
   bool _pendingCountdownStart = false;
+  int? _pendingCountdownStartAtMs;
   int _matchGeneration = 0;
   int _countdownGeneration = 0;
   bool _isRemoved = false;
@@ -512,28 +513,37 @@ class KnifeThrowerGame extends FlameGame
     try {
       await super.onLoad();
 
-      // Preload all high-frequency sounds into memory cache for zero-latency playback on Web
+      // High-frequency sounds. Using .mp3 as primary format for iOS Safari
+      // compatibility (Safari has intermittent .ogg decode stalls that add 50-200ms
+      // latency to the first play). The .mp3 files were generated from the same
+      // .ogg sources at VBR q:4 so quality is identical.
       final highFreqSounds = [
-        'Arrow_Hit_1.ogg',
-        'Arrow_Hit_2.ogg',
-        'Arrow_Hit_3.ogg',
-        'Arrow_Throw_1.ogg',
-        'Arrow_Throw_2.ogg',
-        'Arrow_Throw_3.ogg',
-        'Metal_Clashed.ogg',
+        'Arrow_Hit_1.mp3',
+        'Arrow_Hit_2.mp3',
+        'Arrow_Hit_3.mp3',
+        'Arrow_Throw_1.mp3',
+        'Arrow_Throw_2.mp3',
+        'Arrow_Throw_3.mp3',
+        'Metal_Clashed.mp3',
       ];
 
-      // Parallelize audio pre-caching and asset loading for faster game initialization
+      // Parallelize audio pre-caching and asset loading for faster game initialization.
+      // Timeouts prevent iOS Safari from hanging on unsupported/slow .ogg decoding on first load.
       await Future.wait([
-        FlameAudio.audioCache.loadAll(highFreqSounds),
+        FlameAudio.audioCache
+            .loadAll(highFreqSounds)
+            .timeout(const Duration(milliseconds: 1500), onTimeout: () => []),
         if (kIsWeb)
           ...highFreqSounds.map((sound) async {
             final players = <AudioPlayer>[];
-            for (int i = 0; i < 2; i++) {
+            // 3-player pool: on fast mobile taps two sounds can fire nearly simultaneously
+            for (int i = 0; i < 3; i++) {
               try {
                 final p = AudioPlayer();
                 await p.setReleaseMode(ReleaseMode.stop);
-                await p.setSource(AssetSource('audio/$sound'));
+                await p
+                    .setSource(AssetSource('audio/$sound'))
+                    .timeout(const Duration(milliseconds: 1200));
                 players.add(p);
               } catch (e) {
                 debugPrint('Error creating web audio player for $sound: $e');
@@ -639,13 +649,14 @@ class KnifeThrowerGame extends FlameGame
     }
 
     if (isOnlineMode && onlineService != null) {
-      onlineService!.onCountdownStart = () {
+      onlineService!.onCountdownStart = (startAtServerMs) {
         if (_countdownStartedForMatch || isGameOver) return;
         if (!isMounted) {
           _pendingCountdownStart = true;
+          _pendingCountdownStartAtMs = startAtServerMs;
           return;
         }
-        startCountdown();
+        startCountdown(startAtServerMs: startAtServerMs);
       };
       onlineService!.onOpponentThrow = (playerNum, targetAngle, seq) {
         _handleRemoteThrow(playerNum, targetAngle, seq);
@@ -716,15 +727,16 @@ class KnifeThrowerGame extends FlameGame
   void onMount() {
     super.onMount();
     if (_pendingCountdownStart && !_countdownStartedForMatch && !isGameOver) {
+      final startAt = _pendingCountdownStartAtMs;
       _pendingCountdownStart = false;
-      startCountdown();
+      _pendingCountdownStartAtMs = null;
+      startCountdown(startAtServerMs: startAt);
     }
   }
 
   /// Called in online mode when this client's assets & HUD are ready.
-  /// Blocks input and waits for the server's synchronized [countdown_start]
-  /// event (with a generous 30s safety fallback so slow first-match loads on
-  /// the other device don't cause the faster device to start early).
+  /// Blocks input, retries [player_ready] every 1.5s if needed, and waits
+  /// for the server's synchronized [countdown_start] event.
   void notifyOnlineReady() {
     if (!isOnlineMode || onlineService == null) {
       startCountdown();
@@ -734,11 +746,28 @@ class KnifeThrowerGame extends FlameGame
     _countdownStartedForMatch = false;
     isCountingDown = true;
     if (_pendingCountdownStart && isMounted && !isGameOver) {
+      final startAt = _pendingCountdownStartAtMs;
       _pendingCountdownStart = false;
-      startCountdown();
+      _pendingCountdownStartAtMs = null;
+      startCountdown(startAtServerMs: startAt);
       return;
     }
+    onlineService!.syncClock();
     onlineService!.sendPlayerReady();
+
+    // Retry player_ready periodically in case socket was momentarily reconnecting on iOS/mobile
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (gen != _matchGeneration ||
+          _countdownStartedForMatch ||
+          _isRemoved ||
+          isGameOver) {
+        return false;
+      }
+      onlineService?.sendPlayerReady();
+      return true;
+    });
+
     Future.delayed(const Duration(seconds: 30), () {
       if (gen == _matchGeneration &&
           !_countdownStartedForMatch &&
@@ -749,17 +778,33 @@ class KnifeThrowerGame extends FlameGame
     });
   }
 
-  Future<void> startCountdown() async {
+  Future<void> startCountdown({int? startAtServerMs}) async {
     final gen = ++_countdownGeneration;
     _countdownStartedForMatch = true;
     isCountingDown = true;
+
+    // Align start moment across both devices using server timestamp + estimated clock offset
+    if (startAtServerMs != null && onlineService != null) {
+      final localStartAt =
+          startAtServerMs - onlineService!.serverClockOffsetMs;
+      final waitMs = localStartAt - DateTime.now().millisecondsSinceEpoch;
+      if (waitMs > 0 && waitMs <= 1500) {
+        await Future.delayed(Duration(milliseconds: waitMs));
+        if (_isRemoved || isGameOver || gen != _countdownGeneration) return;
+      }
+    }
+
     overlays.add('countdown');
+    final sw = Stopwatch()..start();
     try {
       for (int i = 3; i > 0; i--) {
         if (_isRemoved || isGameOver || gen != _countdownGeneration) return;
         countdownNotifier.value = i;
-        // You can add a "tick" sound here if you have one
-        await Future.delayed(const Duration(seconds: 1));
+        final targetMs = (4 - i) * 1000;
+        final remaining = targetMs - sw.elapsedMilliseconds;
+        if (remaining > 0) {
+          await Future.delayed(Duration(milliseconds: remaining));
+        }
       }
     } finally {
       if (gen == _countdownGeneration && !_isRemoved) {
@@ -1122,10 +1167,10 @@ class KnifeThrowerGame extends FlameGame
       return;
     }
 
-    // Snap canonical target angle BEFORE triggering the throw so collision math
-    // uses the exact angle the sender computed at throw time.
+    // Launch the opponent's visual knife immediately without snapping target.angle
+    // (snapping targetAngle backwards by network RTT caused skippy target jumps;
+    // authoritative hit/miss and impactLocalAngle come from opponent_throw_result).
     SyncDebug.log('← opponent_throw p$player angle=${targetAngle.toStringAsFixed(3)} seq=$seq');
-    target.setCanonicalAngle(targetAngle);
     handleInput(player, isRemote: true);
   }
 
@@ -1650,7 +1695,7 @@ class Target extends PositionComponent with HasGameReference<KnifeThrowerGame> {
 
       if (game.isOnlineMode && game.localPlayerNumber == 1) {
         _syncAccumulator += dt;
-        if (_syncAccumulator >= 0.5) {
+        if (_syncAccumulator >= 0.1) {
           _syncAccumulator = 0.0;
           game.onlineService?.sendTargetSync(canonicalAngle, _directionSign);
         }

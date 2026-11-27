@@ -35,8 +35,11 @@ class OnlineGameService {
   void Function(String roomCode, int seed)? onGameStart;
   void Function(String error)? onRoomError;
 
+  // Estimated (serverTime - localTime) in milliseconds for synchronized countdowns
+  int serverClockOffsetMs = 0;
+
   // In-game callbacks
-  void Function()? onCountdownStart;
+  void Function(int? startAtServerMs)? onCountdownStart;
   void Function(int playerNumber, double targetAngle, int seq)? onOpponentThrow;
   void Function(
     int playerNumber,
@@ -98,9 +101,16 @@ class OnlineGameService {
     final socket = io.io(
       _serverUrl,
       io.OptionBuilder()
+          // Prefer WebSocket immediately — avoids the 2 round-trip polling
+          // upgrade that adds 200-400ms on first connect on iOS/mobile Safari.
           .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
           .setTimeout(45000)
+          // Aggressive reconnect for mobile: try immediately with short delays
+          .enableReconnection()
+          .setReconnectionAttempts(5)
+          .setReconnectionDelay(500)
+          .setReconnectionDelayMax(2000)
           .build(),
     );
 
@@ -110,6 +120,7 @@ class OnlineGameService {
       debugPrint('[OnlineGameService] Connected to $_serverUrl');
       connectionState.value = OnlineConnectionState.connected;
       errorMessage.value = null;
+      syncClock();
       if (!completer.isCompleted) completer.complete(true);
     });
 
@@ -156,8 +167,10 @@ class OnlineGameService {
       }
     });
 
-    socket.on('countdown_start', (_) {
-      onCountdownStart?.call();
+    socket.on('countdown_start', (data) {
+      final startAt =
+          (data is Map ? (data['startAt'] as num?)?.toInt() : null);
+      onCountdownStart?.call(startAt);
     });
 
     socket.on('room_error', (data) {
@@ -285,6 +298,26 @@ class OnlineGameService {
                 response['error']?.toString() ?? 'Could not join room.';
             errorMessage.value = msg;
             onRoomError?.call(msg);
+          }
+        }
+      },
+    );
+  }
+
+  void syncClock() {
+    final s = _socket;
+    if (s == null || !s.connected) return;
+    final t0 = DateTime.now().millisecondsSinceEpoch;
+    s.emitWithAck(
+      'time_sync',
+      {'clientTime': t0},
+      ack: (response) {
+        if (response is Map) {
+          final serverTime = (response['serverTime'] as num?)?.toInt();
+          if (serverTime != null) {
+            final t1 = DateTime.now().millisecondsSinceEpoch;
+            final rtt = (t1 - t0).clamp(0, 5000);
+            serverClockOffsetMs = serverTime - (t0 + rtt ~/ 2);
           }
         }
       },

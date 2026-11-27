@@ -9,6 +9,11 @@ const io = new Server(server, {
     origin: '*',
     methods: ['GET', 'POST'],
   },
+  // Tune heartbeat for mobile/iOS clients on flaky networks
+  pingInterval: 10000,  // send ping every 10s (default 25s — too slow for mobile)
+  pingTimeout: 15000,   // disconnect if no pong within 15s (default 20s)
+  // Prefer WebSocket from the start, fall back to polling only when needed
+  transports: ['websocket', 'polling'],
 });
 
 const PORT = process.env.PORT || 3000;
@@ -161,6 +166,15 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('time_sync', (data, callback) => {
+    if (typeof callback === 'function') {
+      callback({
+        serverTime: Date.now(),
+        clientTime: data?.clientTime ?? 0,
+      });
+    }
+  });
+
   socket.on('player_ready', () => {
     const roomCode = socket.data.roomCode;
     if (!roomCode) return;
@@ -170,8 +184,9 @@ io.on('connection', (socket) => {
     room.readyPlayers.add(socket.id);
     if (room.readyPlayers.size >= 2) {
       room.readyPlayers.clear();
-      console.log(`[countdown_start] room=${roomCode}`);
-      io.to(roomCode).emit('countdown_start');
+      const startAt = Date.now() + 350;
+      console.log(`[countdown_start] room=${roomCode} startAt=${startAt}`);
+      io.to(roomCode).emit('countdown_start', { startAt });
     }
   });
 
