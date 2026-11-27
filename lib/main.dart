@@ -100,7 +100,7 @@ class KnifeThrowerApp extends StatelessWidget {
       theme: ThemeData(
         brightness: Brightness.dark,
         fontFamily: 'Programme',
-        scaffoldBackgroundColor: const Color(0xFF0F1727),
+        scaffoldBackgroundColor: const Color(0xFF182842),
         useMaterial3: true,
       ),
       builder: (context, child) {
@@ -112,7 +112,7 @@ class KnifeThrowerApp extends StatelessWidget {
 
         if (isMobileLandscape) {
           return Scaffold(
-            backgroundColor: const Color(0xFF0A1628),
+            backgroundColor: const Color(0xFF182842),
             body: Container(
               width: double.infinity,
               height: double.infinity,
@@ -121,9 +121,9 @@ class KnifeThrowerApp extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFF0D1D36),
-                    Color(0xFF0B172A),
-                    Color(0xFF091222),
+                    Color(0xFF1A3050),
+                    Color(0xFF162844),
+                    Color(0xFF122038),
                   ],
                 ),
               ),
@@ -207,8 +207,13 @@ class _GamePageState extends State<GamePage> {
       setState(() {
         _isLoading = false;
       });
-      // Start 3-2-1 countdown after all assets and HUD elements are 100% visible on screen
-      _game!.startCountdown();
+      // Start 3-2-1 countdown after all assets and HUD elements are 100% visible on screen.
+      // In online mode, wait for both players to finish loading before counting down.
+      if (widget.isOnlineMode) {
+        _game!.notifyOnlineReady();
+      } else {
+        _game!.startCountdown();
+      }
     }
   }
 
@@ -271,7 +276,7 @@ class _GamePageState extends State<GamePage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       body: Focus(
         autofocus: true,
         onKeyEvent: (node, event) {
@@ -306,7 +311,7 @@ class _GamePageState extends State<GamePage> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Color(0xFF0D1D36), Color(0xFF0B172A), Color(0xFF091222)],
+              colors: [Color(0xFF1A3050), Color(0xFF162844), Color(0xFF122038)],
             ),
           ),
           child: Stack(
@@ -409,6 +414,7 @@ class KnifeThrowerGame extends FlameGame
   // Tracks the last processed remote-throw sequence number so out-of-order
   // network packets are discarded rather than applied to the wrong throw.
   int _lastRemoteThrowSeq = 0;
+  bool _countdownStartedForMatch = false;
 
   // Screen shake variables for satisfying hit feedback
   double _shakeIntensity = 0.0;
@@ -425,7 +431,8 @@ class KnifeThrowerGame extends FlameGame
   late Vector2 knifeSizeRed;
   late Vector2 knifeSizeBlue;
   late Vector2 prePlacedKnifeSize;
-  late Vector2 brokenKnifeSize;
+  late Vector2 brokenKnifeSizeRed;
+  late Vector2 brokenKnifeSizeBlue;
 
   bool isGameOver = false;
   bool isTransitioning = false; // Block inputs during target slide transition
@@ -458,9 +465,10 @@ class KnifeThrowerGame extends FlameGame
 
   final Map<int, Vector2> _activeDragStart = {};
 
-  // Pre-allocated reusable audio players for Web (avoids creating/destroying DOM audio elements on mobile web)
-  final List<AudioPlayer> _webAudioPlayers = [];
-  int _currentWebPlayerIndex = 0;
+  // Pre-allocated reusable audio players per sound for Web (pre-bound source
+  // during onLoad so impacts never re-fetch/re-decode assets on the main thread)
+  final Map<String, List<AudioPlayer>> _webSoundPools = {};
+  final Map<String, int> _webPoolIndices = {};
 
   // Audio pools for low-latency playback
   final Map<String, AudioPool> _audioPools = {};
@@ -512,13 +520,21 @@ class KnifeThrowerGame extends FlameGame
       await Future.wait([
         FlameAudio.audioCache.loadAll(highFreqSounds),
         if (kIsWeb)
-          ...List.generate(6, (_) async {
-            try {
-              final p = AudioPlayer();
-              await p.setReleaseMode(ReleaseMode.stop);
-              _webAudioPlayers.add(p);
-            } catch (e) {
-              debugPrint('Error creating web audio player: $e');
+          ...highFreqSounds.map((sound) async {
+            final players = <AudioPlayer>[];
+            for (int i = 0; i < 2; i++) {
+              try {
+                final p = AudioPlayer();
+                await p.setReleaseMode(ReleaseMode.stop);
+                await p.setSource(AssetSource('audio/$sound'));
+                players.add(p);
+              } catch (e) {
+                debugPrint('Error creating web audio player for $sound: $e');
+              }
+            }
+            if (players.isNotEmpty) {
+              _webSoundPools[sound] = players;
+              _webPoolIndices[sound] = 0;
             }
           })
         else
@@ -554,20 +570,32 @@ class KnifeThrowerGame extends FlameGame
     String targetAsset,
     int knifeIndex,
   ) async {
+    // In online mode, each player uses their own selected knife uniquely.
+    final int p1KnifeIdx =
+        isOnlineMode ? (onlineService?.p1KnifeIndex ?? knifeIndex) : knifeIndex;
+    final int p2KnifeIdx =
+        isOnlineMode ? (onlineService?.p2KnifeIndex ?? knifeIndex) : knifeIndex;
+
     // Get all necessary filenames
-    final selectedRedKnifeFilename = _getFilenameFromAssetPath(redKnifeAsset);
+    final selectedRedKnifeFilename = _getFilenameFromAssetPath(
+      isOnlineMode
+          ? CustomizationService.getRedKnifeByIndex(p1KnifeIdx)
+          : redKnifeAsset,
+    );
     final selectedBlueKnifeFilename = _getFilenameFromAssetPath(
-      CustomizationService.getBlueKnife(redKnifeAsset),
+      isOnlineMode
+          ? CustomizationService.getBlueKnifeByIndex(p2KnifeIdx)
+          : CustomizationService.getBlueKnife(redKnifeAsset),
     );
     final selectedTargetFilename = _getFilenameFromAssetPath(targetAsset);
     final greyKnifeFilename = _getFilenameFromAssetPath(
       CustomizationService.getGreyKnife(),
     );
     final brokenRedFilename = _getFilenameFromAssetPath(
-      CustomizationService.getBrokenRedKnifeByIndex(knifeIndex),
+      CustomizationService.getBrokenRedKnifeByIndex(p1KnifeIdx),
     );
     final brokenBlueFilename = _getFilenameFromAssetPath(
-      CustomizationService.getBrokenBlueKnifeByIndex(knifeIndex),
+      CustomizationService.getBrokenBlueKnifeByIndex(p2KnifeIdx),
     );
 
     // Load only the assets we need
@@ -592,9 +620,8 @@ class KnifeThrowerGame extends FlameGame
     knifeSizeRed = _calcKnifeSize(knifeRedSprite);
     knifeSizeBlue = _calcKnifeSize(knifeBlueSprite);
     prePlacedKnifeSize = _calcKnifeSize(prePlacedKnifeSprite);
-    brokenKnifeSize = _calcKnifeSize(
-      brokenRedSprite,
-    ); // Assuming both broken knives have similar aspect ratio
+    brokenKnifeSizeRed = _calcKnifeSize(brokenRedSprite);
+    brokenKnifeSizeBlue = _calcKnifeSize(brokenBlueSprite);
 
     // Initialize target and bot
     target = Target();
@@ -605,6 +632,11 @@ class KnifeThrowerGame extends FlameGame
     }
 
     if (isOnlineMode && onlineService != null) {
+      onlineService!.onCountdownStart = () {
+        if (!_countdownStartedForMatch && isMounted && !isGameOver) {
+          startCountdown();
+        }
+      };
       onlineService!.onOpponentThrow = (playerNum, targetAngle, seq) {
         _handleRemoteThrow(playerNum, targetAngle, seq);
       };
@@ -670,7 +702,26 @@ class KnifeThrowerGame extends FlameGame
     isReadyNotifier.value = true;
   }
 
+  /// Called in online mode when this client's assets & HUD are ready.
+  /// Blocks input and waits for the server's synchronized [countdown_start]
+  /// event (with a 6s safety fallback so a slow/laggy packet never soft-locks).
+  void notifyOnlineReady() {
+    if (!isOnlineMode || onlineService == null) {
+      startCountdown();
+      return;
+    }
+    _countdownStartedForMatch = false;
+    isCountingDown = true;
+    onlineService!.sendPlayerReady();
+    Future.delayed(const Duration(seconds: 6), () {
+      if (!_countdownStartedForMatch && isMounted && !isGameOver) {
+        startCountdown();
+      }
+    });
+  }
+
   Future<void> startCountdown() async {
+    _countdownStartedForMatch = true;
     isCountingDown = true;
     overlays.add('countdown');
     for (int i = 3; i > 0; i--) {
@@ -686,14 +737,20 @@ class KnifeThrowerGame extends FlameGame
 
   void playPoolSound(String sound, {double volume = 1.0}) {
     try {
-      if (kIsWeb && _webAudioPlayers.isNotEmpty) {
-        // Fire-and-forget: pick next player from circular pool and play immediately.
-        // Avoids stop().then(play()) microtask jank that caused frame stutter on mobile web.
-        final player = _webAudioPlayers[_currentWebPlayerIndex];
-        _currentWebPlayerIndex =
-            (_currentWebPlayerIndex + 1) % _webAudioPlayers.length;
-        player.play(AssetSource('audio/$sound'), volume: volume);
-        return;
+      if (kIsWeb) {
+        final pool = _webSoundPools[sound];
+        if (pool != null && pool.isNotEmpty) {
+          final idx = _webPoolIndices[sound] ?? 0;
+          _webPoolIndices[sound] = (idx + 1) % pool.length;
+          final player = pool[idx];
+          player.setVolume(volume);
+          if (player.state == PlayerState.playing) {
+            player.seek(Duration.zero);
+          } else {
+            player.resume();
+          }
+          return;
+        }
       }
 
       if (_audioPools.containsKey(sound)) {
@@ -1160,7 +1217,11 @@ class KnifeThrowerGame extends FlameGame
     overlays.remove('gameOver');
     _addPreThrownKnivesToTarget();
     _spawnInitialKnives();
-    startCountdown();
+    if (isOnlineMode) {
+      notifyOnlineReady();
+    } else {
+      startCountdown();
+    }
   }
 
   // Particle effect for a successful hit on the target
@@ -1232,7 +1293,9 @@ class KnifeThrowerGame extends FlameGame
                 child: SpriteParticle(
                   sprite: brokenSprite,
                   size:
-                      brokenKnifeSize *
+                      (player == 1
+                          ? brokenKnifeSizeRed
+                          : brokenKnifeSizeBlue) *
                       0.95 *
                       scale, // Reduced slightly more for a better match
                 ),
@@ -1367,10 +1430,13 @@ class KnifeThrowerGame extends FlameGame
     winnerNotifier.dispose();
     showTapHelperNotifier.dispose();
     isReadyNotifier.dispose();
-    for (final p in _webAudioPlayers) {
-      p.dispose();
+    for (final pool in _webSoundPools.values) {
+      for (final p in pool) {
+        p.dispose();
+      }
     }
-    _webAudioPlayers.clear();
+    _webSoundPools.clear();
+    _webPoolIndices.clear();
     super.onRemove();
   }
 }
@@ -1804,20 +1870,18 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
       final stuckSize = size.clone();
       final targetRadius = game.target.radius;
 
-      Future.microtask(() {
-        if (!game.isMounted || game.isGameOver) return;
-        game.triggerHitParticles(preciseImpactPoint, particleColor, player);
-        game.triggerHitShake();
-        game.target.addStuckKnife(
-          StuckKnife(
-            player: player,
-            sprite: stuckSprite,
-            size: stuckSize,
-            localAngle: impactLocalAngle,
-            radius: targetRadius,
-          ),
-        );
-      });
+      if (!game.isMounted || game.isGameOver) return;
+      game.triggerHitParticles(preciseImpactPoint, particleColor, player);
+      game.triggerHitShake();
+      game.target.addStuckKnife(
+        StuckKnife(
+          player: player,
+          sprite: stuckSprite,
+          size: stuckSize,
+          localAngle: impactLocalAngle,
+          radius: targetRadius,
+        ),
+      );
     } else {
       game.playPoolSound('Metal_Clashed.ogg');
       final targetCenter = game.target.position;
@@ -1826,7 +1890,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
         targetCenter.x + math.cos(impactWorldAngle) * game.target.radius,
         targetCenter.y + math.sin(impactWorldAngle) * game.target.radius,
       );
-      Future.microtask(() => game.triggerClashParticles(clashPoint, player));
+      game.triggerClashParticles(clashPoint, player);
       game.recordMiss(player);
     }
 
@@ -1862,8 +1926,7 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
           targetCenter.x + math.cos(impactWorldAngle) * game.target.radius,
           targetCenter.y + math.sin(impactWorldAngle) * game.target.radius,
         );
-        // Defer particle spawning to next frame to spread component tree rebuild cost
-        Future.microtask(() => game.triggerClashParticles(clashPoint, player));
+        game.triggerClashParticles(clashPoint, player);
 
         // Record a miss
         game.recordMiss(player);
@@ -1897,26 +1960,22 @@ class Knife extends SpriteComponent with HasGameReference<KnifeThrowerGame> {
     // Add satisfying feedback: screen shake + haptics
     game.triggerHapticFeedback(); // Debounced phone vibration
 
-    // Defer heavy component additions and particle generation to next microtask/frame
-    // to keep the hit detection frame completely smooth and avoid multi-component rebuild spikes
     final stuckSprite = sprite!;
     final stuckSize = size.clone();
     final targetRadius = game.target.radius;
 
-    Future.microtask(() {
-      if (!game.isMounted || game.isGameOver) return;
-      game.triggerHitParticles(preciseImpactPoint, particleColor, player);
-      game.triggerHitShake();
-      game.target.addStuckKnife(
-        StuckKnife(
-          player: player,
-          sprite: stuckSprite,
-          size: stuckSize,
-          localAngle: impactLocalAngle,
-          radius: targetRadius,
-        ),
-      );
-    });
+    if (!game.isMounted || game.isGameOver) return;
+    game.triggerHitParticles(preciseImpactPoint, particleColor, player);
+    game.triggerHitShake();
+    game.target.addStuckKnife(
+      StuckKnife(
+        player: player,
+        sprite: stuckSprite,
+        size: stuckSize,
+        localAngle: impactLocalAngle,
+        radius: targetRadius,
+      ),
+    );
   }
 
   int _r3() => KnifeThrowerGame._rng.nextInt(3) + 1;

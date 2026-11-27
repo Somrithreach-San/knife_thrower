@@ -83,7 +83,7 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
@@ -104,7 +104,7 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              color: Color(0xFF0A1628),
+              color: Color(0xFF182842),
             ),
             child: Stack(
               children: [
@@ -156,9 +156,7 @@ class _DifficultyScreenState extends State<DifficultyScreen> {
                                       color: Colors.white.withValues(
                                         alpha: 0.06,
                                       ),
-                                      borderRadius: BorderRadius.circular(
-                                        16 * scale,
-                                      ),
+                                      borderRadius: BorderRadius.circular(6.0),
                                       border: Border.all(
                                         color: Colors.white.withValues(
                                           alpha: 0.25,

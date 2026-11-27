@@ -135,7 +135,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
@@ -155,7 +155,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
             width: double.infinity,
             height: double.infinity,
             decoration: const BoxDecoration(
-              color: Color(0xFF0A1628),
+              color: Color(0xFF182842),
             ),
             child: Stack(
               children: [
@@ -367,6 +367,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
     return _ItemCard(
       key: ValueKey('${_selectedTab}_$index'),
       knife: item,
+      isTarget: _selectedTab == 'target',
       isSelected: isSelected,
       scale: scale,
       onTap: () async {
@@ -390,6 +391,7 @@ class _CustomizationPageState extends State<CustomizationPage> {
 class _ItemCard extends StatefulWidget {
   final Map<String, dynamic> knife;
   final bool isSelected;
+  final bool isTarget;
   final double scale;
   final VoidCallback onTap;
 
@@ -397,6 +399,7 @@ class _ItemCard extends StatefulWidget {
     super.key,
     required this.knife,
     required this.isSelected,
+    this.isTarget = false,
     required this.scale,
     required this.onTap,
   });
@@ -509,31 +512,43 @@ class _ItemCardState extends State<_ItemCard> {
                             ),
                           ),
                         ),
-                        // Item image centered in main circle
-                        Positioned(
-                          left: 10 * widget.scale,
-                          top: 25 * widget.scale,
-                          child: SizedBox(
-                            width: 110 * widget.scale,
-                            height: 110 * widget.scale,
-                            child: Center(
-                              child: Transform.flip(
-                                flipY: widget.knife['flipY'] as bool,
-                                child: Transform.rotate(
-                                  angle: widget.knife['rotation'] as double,
-                                  child: SizedBox(
-                                    width: 125 * widget.scale,
-                                    height: 125 * widget.scale,
-                                    child: Image.asset(
-                                      widget.knife['asset'] as String,
-                                      fit: BoxFit.contain,
+                        // Item image centered in main circle (or centered in card for targets)
+                        widget.isTarget
+                            ? Center(
+                                child: SizedBox(
+                                  width: 95 * widget.scale,
+                                  height: 95 * widget.scale,
+                                  child: Image.asset(
+                                    widget.knife['asset'] as String,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              )
+                            : Positioned(
+                                left: 10 * widget.scale,
+                                top: 25 * widget.scale,
+                                child: SizedBox(
+                                  width: 110 * widget.scale,
+                                  height: 110 * widget.scale,
+                                  child: Center(
+                                    child: Transform.flip(
+                                      flipY: widget.knife['flipY'] as bool,
+                                      child: Transform.rotate(
+                                        angle:
+                                            widget.knife['rotation'] as double,
+                                        child: SizedBox(
+                                          width: 125 * widget.scale,
+                                          height: 125 * widget.scale,
+                                          child: Image.asset(
+                                            widget.knife['asset'] as String,
+                                            fit: BoxFit.contain,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ),
                         // Selected checkmark
                         if (widget.isSelected)
                           Positioned(

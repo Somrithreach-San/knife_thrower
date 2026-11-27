@@ -55,7 +55,7 @@ class _FriendModeScreenState extends State<FriendModeScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       body: _buildLayout(context),
     );
   }
@@ -77,7 +77,7 @@ class _FriendModeScreenState extends State<FriendModeScreen> {
           width: double.infinity,
           height: double.infinity,
           decoration: const BoxDecoration(
-            color: Color(0xFF0A1628),
+            color: Color(0xFF182842),
           ),
           child: Stack(
             children: [

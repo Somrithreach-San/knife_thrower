@@ -22,6 +22,8 @@ class OnlineGameService {
   String? roomCode;
   int? localPlayerNumber; // 1 = Host (Red/Bottom), 2 = Guest (Blue/Top)
   int? matchSeed;
+  int p1KnifeIndex = 0;
+  int p2KnifeIndex = 0;
 
   final ValueNotifier<OnlineConnectionState> connectionState = ValueNotifier(
     OnlineConnectionState.disconnected,
@@ -34,6 +36,7 @@ class OnlineGameService {
   void Function(String error)? onRoomError;
 
   // In-game callbacks
+  void Function()? onCountdownStart;
   void Function(int playerNumber, double targetAngle, int seq)? onOpponentThrow;
   void Function(
     int playerNumber,
@@ -143,12 +146,18 @@ class OnlineGameService {
       if (data is Map) {
         final code = data['roomCode']?.toString() ?? roomCode;
         final seed = (data['seed'] as num?)?.toInt() ?? matchSeed ?? 1;
+        p1KnifeIndex = (data['p1KnifeIndex'] as num?)?.toInt() ?? 0;
+        p2KnifeIndex = (data['p2KnifeIndex'] as num?)?.toInt() ?? 0;
         roomCode = code;
         matchSeed = seed;
         if (code != null) {
           onGameStart?.call(code, seed);
         }
       }
+    });
+
+    socket.on('countdown_start', (_) {
+      onCountdownStart?.call();
     });
 
     socket.on('room_error', (data) {
@@ -242,13 +251,13 @@ class OnlineGameService {
     return completer.future;
   }
 
-  Future<void> createRoom() async {
+  Future<void> createRoom({int knifeIndex = 0}) async {
     final ok = await connect();
     if (!ok || _socket == null) return;
-    _socket!.emit('create_room', {});
+    _socket!.emit('create_room', {'knifeIndex': knifeIndex});
   }
 
-  Future<void> joinRoom(String code) async {
+  Future<void> joinRoom(String code, {int knifeIndex = 0}) async {
     final normalized = code.trim();
     if (normalized.length < 3) {
       const msg = 'Please enter a valid 3-digit room PIN.';
@@ -261,7 +270,7 @@ class OnlineGameService {
     localPlayerNumber = 2;
     _socket!.emitWithAck(
       'join_room',
-      {'roomCode': normalized},
+      {'roomCode': normalized, 'knifeIndex': knifeIndex},
       ack: (response) {
         if (response is Map) {
           if (response['ok'] == true) {
@@ -269,6 +278,8 @@ class OnlineGameService {
             localPlayerNumber =
                 (response['playerNumber'] as num?)?.toInt() ?? 2;
             matchSeed = (response['seed'] as num?)?.toInt();
+            p1KnifeIndex = (response['p1KnifeIndex'] as num?)?.toInt() ?? 0;
+            p2KnifeIndex = (response['p2KnifeIndex'] as num?)?.toInt() ?? 0;
           } else {
             final msg =
                 response['error']?.toString() ?? 'Could not join room.';
@@ -278,6 +289,11 @@ class OnlineGameService {
         }
       },
     );
+  }
+
+  void sendPlayerReady() {
+    if (_socket == null || !_socket!.connected || roomCode == null) return;
+    _socket!.emit('player_ready', {'roomCode': roomCode});
   }
 
   void sendThrow(double targetAngle) {
@@ -334,9 +350,12 @@ class OnlineGameService {
     roomCode = null;
     localPlayerNumber = null;
     matchSeed = null;
+    p1KnifeIndex = 0;
+    p2KnifeIndex = 0;
   }
 
   void clearInGameCallbacks() {
+    onCountdownStart = null;
     onOpponentThrow = null;
     onOpponentThrowResult = null;
     onTargetSync = null;

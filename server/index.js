@@ -60,14 +60,18 @@ io.on('connection', (socket) => {
     socket.data.playerNumber = null;
   };
 
-  socket.on('create_room', (_data, callback) => {
+  socket.on('create_room', (data, callback) => {
     if (socket.data.roomCode) handleLeave();
     const roomCode = generateRoomCode();
     const seed = generateSeed();
+    const knifeIndex = Number.isFinite(Number(data?.knifeIndex))
+      ? Number(data.knifeIndex)
+      : 0;
     rooms.set(roomCode, {
-      players: [{ id: socket.id, playerNumber: 1 }],
+      players: [{ id: socket.id, playerNumber: 1, knifeIndex }],
       seed,
       rematchVotes: new Set(),
+      readyPlayers: new Set(),
       throwSeq: 0,
       p1ThrowsMade: 0,
       p2ThrowsMade: 0,
@@ -80,7 +84,7 @@ io.on('connection', (socket) => {
     socket.data.roomCode = roomCode;
     socket.data.playerNumber = 1;
 
-    console.log(`[room created] ${roomCode} by ${socket.id}`);
+    console.log(`[room created] ${roomCode} by ${socket.id} (knife=${knifeIndex})`);
     const payload = { roomCode, playerNumber: 1, seed };
     if (typeof callback === 'function') callback({ ok: true, ...payload });
     socket.emit('room_created', payload);
@@ -113,12 +117,16 @@ io.on('connection', (socket) => {
       return;
     }
 
-    room.players.push({ id: socket.id, playerNumber: 2 });
+    const knifeIndex = Number.isFinite(Number(data?.knifeIndex))
+      ? Number(data.knifeIndex)
+      : 0;
+    room.players.push({ id: socket.id, playerNumber: 2, knifeIndex });
     socket.join(rawCode);
     socket.data.roomCode = rawCode;
     socket.data.playerNumber = 2;
 
-    // Reset throw counters for fresh game
+    // Reset throw counters and ready state for fresh game
+    room.readyPlayers.clear();
     room.throwSeq = 0;
     room.p1ThrowsMade = 0;
     room.p2ThrowsMade = 0;
@@ -127,16 +135,44 @@ io.on('connection', (socket) => {
     room.gameEnded = false;
     room.gameStarted = true;
 
-    console.log(`[room joined] ${rawCode} by ${socket.id}`);
+    const p1 = room.players.find((p) => p.playerNumber === 1);
+    const p2 = room.players.find((p) => p.playerNumber === 2);
+    const p1KnifeIndex = p1?.knifeIndex ?? 0;
+    const p2KnifeIndex = p2?.knifeIndex ?? 0;
+
+    console.log(`[room joined] ${rawCode} by ${socket.id} (p1Knife=${p1KnifeIndex}, p2Knife=${p2KnifeIndex})`);
     if (typeof callback === 'function') {
-      callback({ ok: true, roomCode: rawCode, playerNumber: 2, seed: room.seed });
+      callback({
+        ok: true,
+        roomCode: rawCode,
+        playerNumber: 2,
+        seed: room.seed,
+        p1KnifeIndex,
+        p2KnifeIndex,
+      });
     }
 
     // Emit game_start to entire room (both players)
     io.to(rawCode).emit('game_start', {
       roomCode: rawCode,
       seed: room.seed,
+      p1KnifeIndex,
+      p2KnifeIndex,
     });
+  });
+
+  socket.on('player_ready', () => {
+    const roomCode = socket.data.roomCode;
+    if (!roomCode) return;
+    const room = rooms.get(roomCode);
+    if (!room) return;
+
+    room.readyPlayers.add(socket.id);
+    if (room.readyPlayers.size >= 2) {
+      room.readyPlayers.clear();
+      console.log(`[countdown_start] room=${roomCode}`);
+      io.to(roomCode).emit('countdown_start');
+    }
   });
 
   socket.on('throw_knife', (data) => {
@@ -228,7 +264,8 @@ io.on('connection', (socket) => {
     if (room.rematchVotes.size >= 2) {
       room.rematchVotes.clear();
       room.seed = generateSeed();
-      // Reset server-side throw counters for new match
+      // Reset server-side throw counters and ready state for new match
+      room.readyPlayers.clear();
       room.throwSeq = 0;
       room.p1ThrowsMade = 0;
       room.p2ThrowsMade = 0;

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'back_arrow_button.dart';
+import 'customization_service.dart';
 import 'main.dart';
 import 'mode_selection_screen.dart';
 import 'services/online_game_service.dart';
@@ -135,7 +136,8 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       _isCreatingRoom = true;
       _hasJoinError = false;
     });
-    await _onlineService.createRoom();
+    final selections = await CustomizationService.loadSelections();
+    await _onlineService.createRoom(knifeIndex: selections.knifeIndex);
     if (mounted &&
         _onlineService.connectionState.value == OnlineConnectionState.error) {
       final msg =
@@ -156,7 +158,8 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       _isJoiningRoom = true;
       _hasJoinError = false;
     });
-    await _onlineService.joinRoom(code);
+    final selections = await CustomizationService.loadSelections();
+    await _onlineService.joinRoom(code, knifeIndex: selections.knifeIndex);
     if (mounted &&
         _onlineService.connectionState.value == OnlineConnectionState.error) {
       final msg =
@@ -182,7 +185,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       resizeToAvoidBottomInset: false,
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -199,7 +202,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
           return Container(
             width: double.infinity,
             height: double.infinity,
-            color: const Color(0xFF0A1628),
+            color: const Color(0xFF182842),
             child: Stack(
               children: [
                 // Back Arrow
@@ -381,7 +384,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
       padding: EdgeInsets.all(22 * scale),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(20 * scale),
+        borderRadius: BorderRadius.circular(6.0),
         border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
       ),
       child: Column(
@@ -413,7 +416,7 @@ class _OnlineLobbyScreenState extends State<OnlineLobbyScreen> {
               ),
               decoration: BoxDecoration(
                 color: const Color(0xFF07101E),
-                borderRadius: BorderRadius.circular(14 * scale),
+                borderRadius: BorderRadius.circular(6.0),
                 border: Border.all(
                   color: const Color(0xFF2CDFA2).withValues(alpha: 0.6),
                 ),

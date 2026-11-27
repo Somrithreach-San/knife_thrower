@@ -121,8 +121,8 @@ class _GameButtonState extends State<GameButton> {
                                 // transparent padding doesn't shrink the actual figures —
                                 // the outer ClipRRect already clips visual overflow.
                                 constraints: BoxConstraints(
-                                  maxWidth: width * 0.26,
-                                  maxHeight: (height - lipHeight) * 1.8,
+                                  maxWidth: width * 0.28,
+                                  maxHeight: (height - lipHeight) * 2.2,
                                 ),
                                 child: FittedBox(
                                   fit: BoxFit.contain,
@@ -176,8 +176,8 @@ class _GameButtonState extends State<GameButton> {
         // vs_friend.png has ~50% empty transparent padding around its content
         // whereas vs_bot fills ~90% of its canvas. Sized up to match visual height & weight.
         return SizedBox(
-          width: 68 * widget.scale,
-          height: 68 * widget.scale,
+          width: 90 * widget.scale,
+          height: 90 * widget.scale,
           child: Image.asset(
             'assets/images/vs_friend.png',
             fit: BoxFit.contain,
@@ -186,8 +186,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.vsBot:
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 24 * widget.scale,
+          height: 24 * widget.scale,
           child: Image.asset(
             'assets/images/vs_bot.png',
             fit: BoxFit.contain,
@@ -196,8 +196,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.local:
         return SizedBox(
-          width: 38 * widget.scale,
-          height: 38 * widget.scale,
+          width: 30 * widget.scale,
+          height: 30 * widget.scale,
           child: Image.asset(
             'assets/images/vs_friend_local.png',
             fit: BoxFit.contain,
@@ -206,8 +206,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.easy:
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 24 * widget.scale,
+          height: 24 * widget.scale,
           child: Image.asset(
             'assets/images/easy_mode.png',
             fit: BoxFit.contain,
@@ -216,8 +216,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.normal:
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 24 * widget.scale,
+          height: 24 * widget.scale,
           child: Image.asset(
             'assets/images/normal_mode.png',
             fit: BoxFit.contain,
@@ -226,8 +226,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.online:
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 24 * widget.scale,
+          height: 24 * widget.scale,
           child: Image.asset(
             'assets/images/vs_friend_online.png',
             fit: BoxFit.contain,
@@ -236,8 +236,8 @@ class _GameButtonState extends State<GameButton> {
         );
       case GameButtonIcon.hard:
         return SizedBox(
-          width: 28 * widget.scale,
-          height: 28 * widget.scale,
+          width: 24 * widget.scale,
+          height: 24 * widget.scale,
           child: Image.asset(
             'assets/images/hard_mode.png',
             fit: BoxFit.contain,
@@ -331,7 +331,7 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1628),
+      backgroundColor: const Color(0xFF182842),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final screenWidth = constraints.maxWidth;
@@ -358,9 +358,9 @@ class _ModeSelectionScreenState extends State<ModeSelectionScreen> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFF0D1D36),
-                  Color(0xFF0B172A),
-                  Color(0xFF091222),
+                  Color(0xFF1A3050),
+                  Color(0xFF162844),
+                  Color(0xFF122038),
                 ],
               ),
             ),
