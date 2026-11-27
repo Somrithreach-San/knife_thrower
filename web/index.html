@@ -136,8 +136,8 @@
         const baseRadius = (w - strokeWidth) / 2 - strokeWidth * 0.5;
         const wavesCount = 8;
         const waveAmplitude = strokeWidth * 0.55;
-        const baseRotation = progress * 2 * Math.PI * 1.5;
-        const arcLength = (0.35 + 0.55 * (0.5 + 0.5 * Math.sin(progress * 2 * Math.PI))) * Math.PI;
+        const baseRotation = progress * 2 * Math.PI * 2.0;
+        const arcLength = (0.35 + 0.50 * (0.5 + 0.5 * Math.sin(progress * 4 * Math.PI))) * Math.PI;
 
         ctx.clearRect(0, 0, w, h);
 
@@ -156,7 +156,7 @@
         // Squiggle wave arc
         ctx.beginPath();
         const steps = 90;
-        const wavePhase = progress * 2 * Math.PI * 3.0;
+        const wavePhase = progress * 2 * Math.PI * 4.0;
         for (let i = 0; i <= steps; i++) {
           const fraction = i / steps;
           const theta = baseRotation + fraction * arcLength;

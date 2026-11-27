@@ -94,11 +94,13 @@ class _PlayStoreSquigglePainter extends CustomPainter {
     const int wavesCount = 8; // Number of sinusoidal undulations around circle
     final double waveAmplitude = strokeWidth * 0.55;
 
-    // Rotating overall angle + dynamic expansion/contraction of arc length
-    final double baseRotation = progress * 2 * math.pi * 1.5;
-    // Length oscillates smoothly between 0.35pi and 1.45pi
+    // Rotating overall angle + dynamic expansion/contraction of arc length.
+    // Integer multiplier (2.0) ensures that at progress = 1.0 (wrap to 0.0),
+    // baseRotation is an exact multiple of 2*pi, avoiding any snap/jump!
+    final double baseRotation = progress * 2 * math.pi * 2.0;
+    // Length oscillates smoothly between 0.35pi and 1.35pi, completing exactly 2 cycles
     final double arcLength =
-        (0.35 + 0.55 * (0.5 + 0.5 * math.sin(progress * 2 * math.pi))) *
+        (0.35 + 0.50 * (0.5 + 0.5 * math.sin(progress * 4 * math.pi))) *
         math.pi;
 
     // Draw background track arc only where the squiggle is NOT present,
@@ -130,13 +132,16 @@ class _PlayStoreSquigglePainter extends CustomPainter {
     const int steps = 90;
     bool started = false;
 
+    // Integer wave frequency on progress (e.g. 4.0 cycles) so the wave phase
+    // wraps seamlessly without any jump when progress loops from 1.0 -> 0.0.
+    final double wavePhase = progress * 2 * math.pi * 4.0;
+
     for (int i = 0; i <= steps; i++) {
       final double fraction = i / steps;
       final double theta = baseRotation + fraction * arcLength;
 
       // Squiggle wave calculation: offset radius by sine of wave frequency
       // Phase travels along the wave creating the signature Google Play wobble/ripple
-      final double wavePhase = progress * 2 * math.pi * 3.0;
       final double radiusOffset =
           math.sin(theta * wavesCount - wavePhase) * waveAmplitude;
       final double currentRadius = baseRadius + radiusOffset;
