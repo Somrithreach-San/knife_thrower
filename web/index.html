@@ -51,36 +51,9 @@
       transition: opacity 0.25s ease-out;
     }
 
-    .spinner-wrap {
+    #loading-canvas {
       width: 40px;
       height: 40px;
-      animation: squiggle-spin 1.4s linear infinite;
-    }
-
-    @keyframes squiggle-spin {
-      0%   { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-
-    .spinner-wrap svg circle.track {
-      stroke: rgba(44, 223, 162, 0.14);
-      stroke-dasharray: none;
-    }
-
-    .spinner-wrap svg circle.arc {
-      stroke: #2CDFA2;
-      stroke-dasharray: 60 100;
-      stroke-dashoffset: 0;
-      animation: squiggle-arc 1.4s ease-in-out infinite;
-      transform-origin: center;
-      transform-box: fill-box;
-    }
-
-    @keyframes squiggle-arc {
-      0%   { stroke-dasharray: 10 100; stroke-dashoffset: 0; }
-      40%  { stroke-dasharray: 70 100; stroke-dashoffset: -30; }
-      80%  { stroke-dasharray: 70 100; stroke-dashoffset: -90; }
-      100% { stroke-dasharray: 10 100; stroke-dashoffset: -120; }
     }
   </style>
 
@@ -135,20 +108,79 @@
   </script>
 </head>
 <body>
-  <!-- Loading Spinner — Google Play squiggle style -->
+  <!-- Loading Spinner — Google Play squiggle style (matches Flutter AppLoadingIndicator) -->
   <div id="loading-indicator">
-    <div class="spinner-wrap">
-      <svg viewBox="0 0 40 40" width="40" height="40" xmlns="http://www.w3.org/2000/svg">
-        <!-- No background track ring — matches Flutter squiggle style -->
-        <circle class="arc"
-          cx="20" cy="20" r="16"
-          fill="none"
-          stroke="#2CDFA2"
-          stroke-width="3.5"
-          stroke-linecap="round" />
-      </svg>
-    </div>
+    <canvas id="loading-canvas" width="80" height="80"></canvas>
   </div>
+
+  <script>
+    (function() {
+      const canvas = document.getElementById('loading-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const duration = 2200;
+      let startTime = null;
+      let rafId = null;
+
+      function drawSquiggle(timestamp) {
+        const loader = document.getElementById('loading-indicator');
+        if (!loader) return;
+        if (!startTime) startTime = timestamp;
+        const progress = ((timestamp - startTime) % duration) / duration;
+
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const strokeWidth = w * 0.09;
+        const baseRadius = (w - strokeWidth) / 2 - strokeWidth * 0.5;
+        const wavesCount = 8;
+        const waveAmplitude = strokeWidth * 0.55;
+        const baseRotation = progress * 2 * Math.PI * 1.5;
+        const arcLength = (0.35 + 0.55 * (0.5 + 0.5 * Math.sin(progress * 2 * Math.PI))) * Math.PI;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Partial track arc with gap where squiggle is
+        const gapAngle = (strokeWidth * 1.4) / baseRadius;
+        const trackSweep = 2 * Math.PI - arcLength - 2 * gapAngle;
+        if (trackSweep > 0.05) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, baseRadius, baseRotation + arcLength + gapAngle, baseRotation + arcLength + gapAngle + trackSweep);
+          ctx.strokeStyle = 'rgba(44, 223, 162, 0.15)';
+          ctx.lineWidth = strokeWidth * 0.7;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+        }
+
+        // Squiggle wave arc
+        ctx.beginPath();
+        const steps = 90;
+        const wavePhase = progress * 2 * Math.PI * 3.0;
+        for (let i = 0; i <= steps; i++) {
+          const fraction = i / steps;
+          const theta = baseRotation + fraction * arcLength;
+          const radiusOffset = Math.sin(theta * wavesCount - wavePhase) * waveAmplitude;
+          const r = baseRadius + radiusOffset;
+          const x = cx + r * Math.cos(theta);
+          const y = cy + r * Math.sin(theta);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = '#2CDFA2';
+        ctx.lineWidth = strokeWidth;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        rafId = requestAnimationFrame(drawSquiggle);
+      }
+
+      rafId = requestAnimationFrame(drawSquiggle);
+      window.addEventListener('flutter-first-frame', function() {
+        if (rafId) cancelAnimationFrame(rafId);
+      });
+    })();
+  </script>
 
   <script src="flutter_bootstrap.js" async=""></script>
 </body>

@@ -88,44 +88,57 @@ class _PlayStoreSquigglePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final strokeWidth = size.width * 0.09;
-    // baseRadius: the fixed orbit radius — squiggle wiggles around this
     final baseRadius = (size.width - strokeWidth) / 2 - strokeWidth * 0.5;
 
-    // No background track ring — matches Google Play style (just the traveling squiggle)
-
     // Active wave properties
-    const int wavesCount = 6; // undulations around the arc
-    // Amplitude kept well under half-strokeWidth so squiggle never touches
-    // the track-ring radius from outside the arc band.
-    final double waveAmplitude = strokeWidth * 0.22;
+    const int wavesCount = 8; // Number of sinusoidal undulations around circle
+    final double waveAmplitude = strokeWidth * 0.55;
 
     // Rotating overall angle + dynamic expansion/contraction of arc length
     final double baseRotation = progress * 2 * math.pi * 1.5;
-    // Arc length oscillates smoothly between ~0.4π and ~1.4π
+    // Length oscillates smoothly between 0.35pi and 1.45pi
     final double arcLength =
-        (0.40 + 0.50 * (0.5 + 0.5 * math.sin(progress * 2 * math.pi))) *
+        (0.35 + 0.55 * (0.5 + 0.5 * math.sin(progress * 2 * math.pi))) *
         math.pi;
+
+    // Draw background track arc only where the squiggle is NOT present,
+    // leaving a clean gap at both ends so the squiggle never overlaps the track.
+    final double gapAngle = (strokeWidth * 1.4) / baseRadius;
+    final double trackSweep = 2 * math.pi - arcLength - 2 * gapAngle;
+    if (trackSweep > 0.05) {
+      final trackPaint = Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth * 0.7
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: baseRadius),
+        baseRotation + arcLength + gapAngle,
+        trackSweep,
+        false,
+        trackPaint,
+      );
+    }
 
     final wavePaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
+      ..strokeCap = StrokeCap.round;
 
     final path = Path();
-    const int steps = 120; // higher step count for smoother squiggle
+    const int steps = 90;
     bool started = false;
 
     for (int i = 0; i <= steps; i++) {
       final double fraction = i / steps;
       final double theta = baseRotation + fraction * arcLength;
 
-      // Phase travels forward creating the Google Play ripple effect
-      final double wavePhase = progress * 2 * math.pi * 4.0;
+      // Squiggle wave calculation: offset radius by sine of wave frequency
+      // Phase travels along the wave creating the signature Google Play wobble/ripple
+      final double wavePhase = progress * 2 * math.pi * 3.0;
       final double radiusOffset =
-          math.sin(fraction * wavesCount * math.pi * 2 - wavePhase) *
-          waveAmplitude;
+          math.sin(theta * wavesCount - wavePhase) * waveAmplitude;
       final double currentRadius = baseRadius + radiusOffset;
 
       final double x = center.dx + currentRadius * math.cos(theta);
