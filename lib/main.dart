@@ -208,12 +208,15 @@ class _GamePageState extends State<GamePage> {
         _isLoading = false;
       });
       // Start 3-2-1 countdown after all assets and HUD elements are 100% visible on screen.
-      // In online mode, wait for both players to finish loading before counting down.
-      if (widget.isOnlineMode) {
-        _game!.notifyOnlineReady();
-      } else {
-        _game!.startCountdown();
-      }
+      // Wait for post-frame so GameWidget is mounted and visible before signaling online readiness.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _game == null) return;
+        if (widget.isOnlineMode) {
+          _game!.notifyOnlineReady();
+        } else {
+          _game!.startCountdown();
+        }
+      });
     }
   }
 
@@ -415,6 +418,8 @@ class KnifeThrowerGame extends FlameGame
   // network packets are discarded rather than applied to the wrong throw.
   int _lastRemoteThrowSeq = 0;
   bool _countdownStartedForMatch = false;
+  bool _pendingCountdownStart = false;
+  int _matchGeneration = 0;
 
   // Screen shake variables for satisfying hit feedback
   double _shakeIntensity = 0.0;
@@ -633,9 +638,12 @@ class KnifeThrowerGame extends FlameGame
 
     if (isOnlineMode && onlineService != null) {
       onlineService!.onCountdownStart = () {
-        if (!_countdownStartedForMatch && isMounted && !isGameOver) {
-          startCountdown();
+        if (_countdownStartedForMatch || isGameOver) return;
+        if (!isMounted) {
+          _pendingCountdownStart = true;
+          return;
         }
+        startCountdown();
       };
       onlineService!.onOpponentThrow = (playerNum, targetAngle, seq) {
         _handleRemoteThrow(playerNum, targetAngle, seq);
@@ -702,19 +710,38 @@ class KnifeThrowerGame extends FlameGame
     isReadyNotifier.value = true;
   }
 
+  @override
+  void onMount() {
+    super.onMount();
+    if (_pendingCountdownStart && !_countdownStartedForMatch && !isGameOver) {
+      _pendingCountdownStart = false;
+      startCountdown();
+    }
+  }
+
   /// Called in online mode when this client's assets & HUD are ready.
   /// Blocks input and waits for the server's synchronized [countdown_start]
-  /// event (with a 6s safety fallback so a slow/laggy packet never soft-locks).
+  /// event (with a generous 30s safety fallback so slow first-match loads on
+  /// the other device don't cause the faster device to start early).
   void notifyOnlineReady() {
     if (!isOnlineMode || onlineService == null) {
       startCountdown();
       return;
     }
+    final gen = ++_matchGeneration;
     _countdownStartedForMatch = false;
     isCountingDown = true;
+    if (_pendingCountdownStart && isMounted && !isGameOver) {
+      _pendingCountdownStart = false;
+      startCountdown();
+      return;
+    }
     onlineService!.sendPlayerReady();
-    Future.delayed(const Duration(seconds: 6), () {
-      if (!_countdownStartedForMatch && isMounted && !isGameOver) {
+    Future.delayed(const Duration(seconds: 30), () {
+      if (gen == _matchGeneration &&
+          !_countdownStartedForMatch &&
+          isMounted &&
+          !isGameOver) {
         startCountdown();
       }
     });
